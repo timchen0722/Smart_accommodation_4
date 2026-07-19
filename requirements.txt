@@ -1,0 +1,17 @@
+# 版本釘選:models/ 內 joblib/pkl 以下列版本訓練,
+# 升級 scikit-learn / lightgbm / xgboost 前請先重跑 scripts/train_backend_models.py
+streamlit>=1.49,<2
+pandas~=2.3
+numpy~=2.2
+scikit-learn~=1.7.2
+lightgbm~=4.7.0
+xgboost~=3.2.0
+shap~=0.49.1
+joblib~=1.5
+lime>=0.2
+plotly~=6.9
+matplotlib>=3.8
+pyarrow>=14.0
+requests>=2.31
+Pillow>=10.0
+google-genai>=1.0

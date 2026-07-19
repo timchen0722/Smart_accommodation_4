@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 訓練暫存(checkpoint / 分段產物)
+models/_ck_*.joblib
+models/_part_*.joblib
+
+# 金鑰:絕不可推上 GitHub(Streamlit Cloud 請用 App settings → Secrets 設定)
+.streamlit/secrets.toml
+
+# IDE / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 大型影音(討論影片不需部署)
+doc/*.mp4
+data/reviews_cleaned.parquet
