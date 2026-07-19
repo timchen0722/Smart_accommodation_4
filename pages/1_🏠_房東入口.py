@@ -193,44 +193,79 @@ with TB2:
 
     cA, cB = st.columns([1, 1.5], gap="large")
     with cA:
-        sec("風險評估(GroupKFold OOF 誠實預測)")
-        # 主指標一律採 OOF 誠實值 —— 與總覽卡片/下拉選單/通知中心完全一致
-        _vac = float(R["vac_pred"])
-        _prob = float(R[PROB_COL])
-        _tier = R[TIER_COL]
+        # ── 基準值(OOF 誠實預測):與總覽/下拉/通知中心口徑一致 ──
+        _vac0 = float(R["vac_pred"])
+        _prob0 = float(R[PROB_COL])
+        _tier0 = R[TIER_COL]
         _variant = R.get("variant", "full")
+
+        # ── What-if 控制項(先操作、再看結果) ──
+        _price0 = float(R["price"])
+        _mn_now = pd.to_numeric(R["minimum_nights"], errors="coerce")
+        _mn0 = 1 if pd.isna(_mn_now) else int(np.clip(_mn_now, 1, 30))
+        if ROW is not None:
+            sec("⚡ What-if 模擬(拖動後上方風險環即時重算)")
+            _np_ = st.slider("每晚房價 (NT$)", 500, 50000,
+                             int(np.clip(_price0, 500, 50000)), 100)
+            _nm = st.number_input("最低入住天數(晚)", 1, 30, _mn0)
+            _changed = (abs(_np_ - _price0) > 1) or (_nm != _mn0)
+        else:
+            _np_, _nm, _changed = _price0, _mn0, False
+
+        # ── 依是否調整,決定環要顯示「基準」或「模擬後」 ──
+        if _changed:
+            _row2 = ROW.copy()
+            _row2["minimum_nights"] = _nm
+            _base_fit = predict_risk_v2(ROW, BUNDLE, algo=ALGO)
+            _sim = simulate_price_change(_row2, BUNDLE, float(_np_), algo=ALGO)
+            # 模擬以「相對變化」套回 OOF 基準,維持與全站一致的口徑
+            _d_vac = _sim["risk_score"] - _base_fit["risk_score"]
+            _d_prob = _sim["notify_prob"] - _base_fit["notify_prob"]
+            _vac = float(np.clip(_vac0 + _d_vac, 0, 1))
+            _prob = float(np.clip(_prob0 + _d_prob, 0, 1))
+            _tier = ("red" if _prob >= .6 else
+                     ("yellow" if _prob >= .35 else "green"))
+        else:
+            _vac, _prob, _tier = _vac0, _prob0, _tier0
+            _d_vac = _d_prob = 0.0
         t_zh, t_c = TIER_ZH[_tier]
+
+        _delta_html = ""
+        if _changed:
+            _dc = P["high"] if _d_prob > 0 else (P["low"] if _d_prob < 0 else P["muted"])
+            _tier_moved = ("　等級 " + TIER_ZH[_tier0][0] + " → " + t_zh
+                           if _tier != _tier0 else "")
+            _delta_html = (
+                f"<div style='margin-top:6px;font-size:.86rem;color:{_dc};"
+                f"font-weight:700;'>模擬變化:機率 {_d_prob*100:+.1f} pp·"
+                f"空屋率 {_d_vac*100:+.1f} pp{_tier_moved}</div>"
+                f"<div style='font-size:.74rem;color:{P['muted']};'>"
+                f"基準(現況):機率 {_prob0*100:.0f}%·空屋率 {_vac0*100:.0f}%</div>")
+
         st.markdown(
             f"<div style='text-align:center;background:{P['surface']};"
-            f"border:1px solid {P['border']};border-radius:14px;padding:18px;'>"
+            f"border:1px solid {P['border']};border-radius:14px;padding:18px;"
+            f"{'border:2px dashed ' + P['accent'] + ';' if _changed else ''}'>"
+            f"<div style='font-size:.78rem;color:{P['muted']};letter-spacing:.08em;'>"
+            f"{'⚡ 模擬後風險' if _changed else 'GroupKFold OOF 誠實預測'}</div>"
             f"{risk_ring(_prob, t_c, size=170)}"
             f"<div style='margin-top:6px;'><span style='background:{t_c};color:#fff;"
             f"border-radius:16px;padding:4px 18px;font-weight:800;'>{t_zh}</span></div>"
-            f"<div style='color:{P['muted']};font-size:.82rem;margin-top:8px;'>"
-            f"環 = 高風險機率 P(空屋率≥60%),紅≥60%·黃≥35%·綠<35%<br>"f"OOF 預測空屋率(模型A):<b>{_vac*100:.0f}%</b><br>"
+            f"{_delta_html}"
+            f"<div style='color:{P['muted']};font-size:.8rem;margin-top:8px;'>"
+            f"環 = 高風險機率 P(空屋率≥60%),紅≥60%·黃≥35%·綠<35%<br>"
+            f"預測空屋率(模型A):<b>{_vac*100:.0f}%</b><br>"
             f"模型:{'XGBoost' if ALGO == 'xgb' else 'LightGBM'}·"
-            f"{'冷啟動' if _variant == 'cold' else '完整'}變體·"
-            f"OOF 誠實評估(模型未看過此房東)</div></div>",
+            f"{'冷啟動' if _variant == 'cold' else '完整'}變體</div></div>",
             unsafe_allow_html=True)
-        if ROW is not None:
-            st.markdown("**⚡ What-if 模擬**")
-            _np_ = st.slider("每晚房價 (NT$)", 500, 50000,
-                             int(np.clip(float(R["price"]), 500, 50000)), 100)
-            _mn_now = pd.to_numeric(R["minimum_nights"], errors="coerce")
-            _mn_now = 1 if pd.isna(_mn_now) else _mn_now
-            _nm = st.number_input("最低入住天數(晚)", 1, 30,
-                                  int(np.clip(_mn_now, 1, 30)))
-            _row2 = ROW.copy()
-            _row2["minimum_nights"] = _nm
-            # What-if 用全量擬合模型:只看「相對變化」,基準亦為同一模型口徑
-            _base_fit = predict_risk_v2(ROW, BUNDLE, algo=ALGO)["risk_score"]
-            _sim = simulate_price_change(_row2, BUNDLE, float(_np_), algo=ALGO)
-            st.metric("What-if 相對變化(模擬口徑)",
-                      f"{(_sim['risk_score'] - _base_fit)*100:+.1f} pp",
-                      f"模擬空屋率 {_sim['risk_score']*100:.1f}%",
-                      delta_color="off")
-            st.caption("模擬使用全量擬合模型,數值與上方 OOF 誠實評估口徑不同;"
-                       "請以「相對變化」判讀調整方向與幅度。")
+
+        if _changed and abs(_d_prob) < 0.005 and abs(_d_vac) < 0.005:
+            note("⚠️ <b>此調整幅度下模型預測未變動</b>,原因有二:"
+                 "①樹模型與 Isotonic 校準皆為<b>階梯函數</b>,微調常落在同一階;"
+                 "②在本資料集中,<b>價格與最低入住天數並非主要風險驅動因子</b>"
+                 "(前向選擇中分居第 19、15 名,屬噪音帶)。"
+                 "真正的強訊號是<b>房東接受率、回覆速度、周邊口碑排名</b> —— "
+                 "見右側 LIME 原因與改善建議。可試更大幅度調整觀察階梯跳動。")
 
     with cB:
         sec("LIME 原因 Top 3(為什麼有風險)")
@@ -338,28 +373,57 @@ with TB2:
                 note(f"<b>{i}. {s['title']}</b>:{s['detail']}"
                      f"<br><span style='font-size:.72rem;'>依據:{s['evidence']}</span>")
 
-    # ── 趨勢線(價格 What-if 曲線) ──
+    # ── 趨勢線(價格 What-if 模擬 × 真實市場對照) ──
     if ROW is not None:
-        sec("趨勢線:價格 What-if 模擬(非歷史時序)")
+        sec("趨勢線:價格 What-if 模擬 × 真實市場對照(非歷史時序)")
         _lo = max(500, int(float(R["price"]) * .5))
-        _hi = int(float(R["price"]) * 1.6) + 500
+        _hi = int(float(R["price"]) * 1.8) + 500
         _xs = np.linspace(_lo, _hi, 15)
-        _ys = [simulate_price_change(ROW, BUNDLE, float(p),
-                                     algo=ALGO)["risk_score"] * 100 for p in _xs]
+        _sims = [simulate_price_change(ROW, BUNDLE, float(p), algo=ALGO)
+                 for p in _xs]
+        _ys = [s["risk_score"] * 100 for s in _sims]
+        _ps = [s["notify_prob"] * 100 for s in _sims]
+
+        # 真實數據對照:同區同房型房源在各價格帶的「實際」平均空屋率
+        _peer = DS[(DS["neighbourhood_code"] == ROW["neighbourhood_code"]) &
+                   (DS["room_type_code"] == ROW["room_type_code"])]
+        _emp_x, _emp_y, _emp_n = [], [], []
+        if len(_peer) >= 20:
+            _edges = np.linspace(_lo, _hi, 9)
+            for _a, _b_ in zip(_edges[:-1], _edges[1:]):
+                _g = _peer[(_peer["price"] >= _a) & (_peer["price"] < _b_)]
+                if len(_g) >= 5:  # 每帶至少 5 筆真實樣本才畫
+                    _emp_x.append((_a + _b_) / 2)
+                    _emp_y.append(_g["Y_vacancy"].mean() * 100)
+                    _emp_n.append(len(_g))
+
         _figT = go.Figure()
         _figT.add_trace(go.Scatter(x=_xs, y=_ys, mode="lines+markers",
                                    line=dict(color=P["primary"], width=3),
-                                   name="預測空屋率"))
+                                   name="模型預測空屋率(What-if)"))
+        _figT.add_trace(go.Scatter(x=_xs, y=_ps, mode="lines",
+                                   line=dict(color=P["medium"], width=2,
+                                             dash="dash"),
+                                   name="P(高風險) 機率"))
+        if _emp_x:
+            _figT.add_trace(go.Scatter(
+                x=_emp_x, y=_emp_y, mode="markers+lines",
+                line=dict(color=P["accent"], width=2, dash="dot"),
+                marker=dict(size=[max(8, min(20, n / 2)) for n in _emp_n],
+                            symbol="diamond"),
+                name=f"真實市場:同區同房型實際空屋率(n={sum(_emp_n)})",
+                hovertext=[f"價格帶均值·{n} 筆真實房源" for n in _emp_n]))
         _figT.add_vline(x=float(R["price"]), line_dash="dot",
                         line_color=P["accent"],
                         annotation_text=f"目前 ${float(R['price']):,.0f}")
         _figT.add_hline(y=60, line_dash="dot", line_color=P["high"],
                         annotation_text="60% 高風險線")
-        apply_theme(_figT, h=290).update_layout(
-            xaxis_title="每晚房價 (NT$)", yaxis_title="預測空屋率 (%)")
+        apply_theme(_figT, h=320).update_layout(
+            xaxis_title="每晚房價 (NT$)", yaxis_title="空屋率 / 機率 (%)")
         st.plotly_chart(_figT, use_container_width=True)
-        st.caption("模型 A 對「調價後空屋率」的直接回答;樹模型對價格呈階梯狀反應屬正常現象。"
-                   "價格百分位為市場相對排名,單筆模擬不重排整個市場。")
+        st.caption("藍線 = 模型對「調價後」的 What-if 預測(price_pctl 已依同區同房型真實價格分佈"
+                   "動態重排);菱形虛線 = **真實市場數據**:同區同房型房源在各價格帶的實際平均空屋率"
+                   "(菱形越大樣本越多)。兩者趨勢一致代表模擬可信;樹模型對價格呈階梯狀反應屬正常。")
 
 # ══════════════════════════════════════════════════════════════
 # TB3 附近比較(熱力圖 + 風險比較 + 同商圈排名 + 跨平台)

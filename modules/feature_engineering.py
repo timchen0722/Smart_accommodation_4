@@ -165,12 +165,32 @@ def predict_risk_v2(row, bundle, force_variant=None, algo=None):
             "variant": variant, "threshold": red, "confidence": confidence}
 
 
-def simulate_price_change(row, bundle, new_price, algo=None):
-    """價格 what-if 模擬：調整價格與連動衍生特徵後重新預測。
+_PRICE_REF = None  # 模組級快取:(行政區, 房型) → 排序後真實價格陣列
 
-    取代舊版 predict_vacancy_prob 的固定乘數公式 —— 直接讓模型 A 回答
-    「調價後風險分數變多少」。注意：價格百分位（price_pctl_nbhd）屬群組
-    相對排名，單筆模擬不重排整個市場，維持原值（已知限制，於 UI 註明）。
+
+def _price_ref() -> dict:
+    """建立同區同房型的真實價格分佈(What-if 動態重算百分位用)。"""
+    global _PRICE_REF
+    if _PRICE_REF is None:
+        df = load_dataset_final()
+        ref = {}
+        for (n, rt), g in df.groupby(["neighbourhood_code", "room_type_code"]):
+            arr = pd.to_numeric(g["price"], errors="coerce").dropna().to_numpy()
+            if len(arr) >= 5:
+                ref[(int(n), int(rt))] = np.sort(arr)
+        for n, g in df.groupby("neighbourhood_code"):  # 樣本不足時退回全區
+            arr = pd.to_numeric(g["price"], errors="coerce").dropna().to_numpy()
+            ref[(int(n), -1)] = np.sort(arr)
+        _PRICE_REF = ref
+    return _PRICE_REF
+
+
+def simulate_price_change(row, bundle, new_price, algo=None):
+    """價格 what-if 模擬:調整價格與「全部」連動衍生特徵後重新預測。
+
+    v4 修正:除 price_per_person / price_per_bedroom 外,亦以同區同房型的
+    **真實市場價格分佈**動態重算 price_pctl_nbhd(價格百分位)——樹模型學到的
+    價格效應主要在此相對排名特徵上,不重算會導致調價幾乎不影響預測。
     """
     sim = row.copy()
     sim["price"] = new_price
@@ -182,4 +202,14 @@ def simulate_price_change(row, bundle, new_price, algo=None):
     sim["price_per_bedroom"] = (new_price / bed
                                 if bed and not pd.isna(bed) and bed > 0
                                 else np.nan)
+    try:  # 以真實市場分佈重排價格百分位(同區同房型;樣本不足退回全區)
+        n = int(row.get("neighbourhood_code"))
+        rt = int(row.get("room_type_code"))
+        arr = _price_ref().get((n, rt))
+        if arr is None or len(arr) < 5:
+            arr = _price_ref().get((n, -1))
+        if arr is not None and len(arr):
+            sim["price_pctl_nbhd"] = float((arr < float(new_price)).mean())
+    except (TypeError, ValueError):
+        pass  # 缺編碼欄位時維持原百分位
     return predict_risk_v2(sim, bundle, algo=algo)
