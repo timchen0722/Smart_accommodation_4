@@ -191,7 +191,8 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
                 with st.spinner("產生智慧建議並寄送(模擬)…"):
                     try:
                         from modules.llm_advisor import llm_available
-                        if llm_available():
+                        # LLM 僅於紅色高風險(機率 ≥ 0.6)觸發,其餘用規則引擎
+                        if llm_available() and prob >= 0.6:
                             src, advice = _llm_advice(h, prob)
                         else:
                             src, advice = "規則引擎", _rule_advice(h)

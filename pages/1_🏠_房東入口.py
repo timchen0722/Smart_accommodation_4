@@ -282,10 +282,12 @@ with TB2:
         _gaps = ([k for k, v in _cs["amenity_coverage"].items()
                   if v >= .5 and k not in _own_am][:3] if _cs else [])
 
-        if _tier in ("red", "yellow"):
+        # LLM 僅於「紅色高風險」觸發(依需求:高風險才由 LLM 給建議);
+        # 黃色觀察層與綠色安全層使用規則引擎。
+        if _tier == "red":
             from modules.llm_advisor import llm_available, generate_advice
             if llm_available():
-                mb(f"LLM 智慧建議({llm_available()})· 高風險觸發", warning=False)
+                mb(f"LLM 智慧建議({llm_available()})· 🔴 高風險觸發", warning=True)
                 try:
                     @st.cache_data(show_spinner="🧠 LLM 生成個人化建議中 …", ttl=3600)
                     def _llm_advice(_key: str, ctx: dict):
@@ -314,6 +316,10 @@ with TB2:
                 note("未設定 LLM 金鑰(ANTHROPIC_API_KEY / GEMINI_API_KEY),"
                      "以下為規則引擎建議;設定金鑰後即自動改由 LLM 生成個人化建議。")
                 _use_rules = True
+        elif _tier == "yellow":
+            note("🟡 觀察層:以下為規則引擎建議;LLM 個人化建議於"
+                 "🔴 紅色高風險(機率 ≥ 60%)時才會觸發。")
+            _use_rules = True
         else:
             note("🟢 綠色安全層:暫無需調整,以下為保持競爭力的常規檢查。")
             _use_rules = True
