@@ -54,7 +54,29 @@ def collect(listing_row, pred_row, listings_df,
             "gap_days_30d": int(cal.get("gap_days_30d") or 0),
             "gap_longest_30d": int(cal.get("gap_longest_30d") or 0),
             "gap_days_90d": int(cal.get("gap_days_90d") or 0),
+            "min_nights_median": float(cal.get("min_nights_median") or 0),
+            "is_all_blocked": int(cal.get("is_all_blocked") or 0),
+            "is_all_open": int(cal.get("is_all_open") or 0),
+            "is_longterm_only": int(cal.get("is_longterm_only") or 0),
         }
+        # ── 體質(模型)× 檔期(真實)四象限 ──
+        from modules.quadrant import QUADRANTS, classify_row
+        q = classify_row(d["tier"], d["cal"]["d90"])
+        d["quadrant"] = q
+        d["quadrant_info"] = QUADRANTS[q]
+        # 營運狀態辨識(房東暫停 / 轉長租 / 正常營運)
+        if d["cal"]["is_all_blocked"]:
+            d["op_status"] = ("疑似暫停營業",
+                              "未來 365 天全部設為不可訂,可能已停業、轉自住或長期封鎖日曆")
+        elif d["cal"]["is_longterm_only"]:
+            d["op_status"] = ("已轉為長租經營",
+                              f"最低入住天數中位 {d['cal']['min_nights_median']:.0f} 晚,"
+                              f"已脫離短租市場,短租空屋率指標不適用")
+        elif d["cal"]["is_all_open"]:
+            d["op_status"] = ("完全無訂單",
+                              "未來 365 天全部可訂,尚未取得任何預訂")
+        else:
+            d["op_status"] = ("正常營運", "")
         d["gaps"] = ca.gap_segments(cal, min_len=5, horizon=90)
         d["monthly"] = ca.monthly_vs_market(cal, d["district"], d["room_type"])
         curve = ca.peer_revenue_curve(listings_df, d["district"], d["room_type"])
@@ -69,31 +91,49 @@ def collect(listing_row, pred_row, listings_df,
 
 
 def _rule_summary(d: dict) -> str:
-    """無 LLM 金鑰時的規則式摘要。"""
+    """無 LLM 金鑰時的規則式摘要(以真實檔期調和模型判斷)。"""
     tier_zh = {"red": "高風險", "yellow": "觀察", "green": "安全"}.get(d["tier"], "")
-    parts = [f"本房源目前風險等級為 **{tier_zh}**"
-             f"(高風險機率 {d['prob']:.0%}、預測空屋率 {d['vac_pred']:.0%})。"]
     c = d.get("cal")
+    q = d.get("quadrant_info")
+
+    # 營運狀態異常時,先講狀態,模型指標降為次要
+    op = d.get("op_status")
+    if op and op[0] != "正常營運":
+        return (f"⚠️ 此房源目前狀態為 **{op[0]}** —— {op[1]}。"
+                f"模型的風險等級({tier_zh}、機率 {d['prob']:.0%})"
+                f"是以短租經營為前提推估,在此狀態下僅供參考。")
+
+    parts = []
+    if q:
+        parts.append(f"綜合評估:**{q['label']}** —— {q['desc']}。"
+                     f"模型體質評估為{tier_zh}(機率 {d['prob']:.0%}),"
+                     f"而未來 90 天真實已訂率為 {c['d90']:.0%}")
+    else:
+        parts.append(f"本房源目前風險等級為 **{tier_zh}**"
+                     f"(高風險機率 {d['prob']:.0%}、預測空屋率 {d['vac_pred']:.0%})")
     if c:
         parts.append(f"未來 365 天已訂 {c['booked_days']} 天"
                      f"(訂房率 {c['booked_rate']:.0%});"
                      f"未來 30 天內有 {c['gap_days_30d']} 天空檔,"
-                     f"最長連續 {c['gap_longest_30d']} 天。")
+                     f"最長連續 {c['gap_longest_30d']} 天")
         if d["price"] and c["gap_days_30d"]:
             parts.append(f"以現價估算,近 30 天空檔的機會成本約 "
-                         f"{_fmt_money(d['price'] * c['gap_days_30d'])}。")
+                         f"{_fmt_money(d['price'] * c['gap_days_30d'])}")
     if d.get("opt") and d["price"]:
         gap = d["opt"]["price"] - d["price"]
         if abs(gap) > 100:
             parts.append(f"同商圈同房型的營收最適價格帶約 "
                          f"{_fmt_money(d['opt']['price'])},"
                          f"建議{'調高' if gap > 0 else '調降'} "
-                         f"{_fmt_money(abs(gap))}。")
+                         f"{_fmt_money(abs(gap))}")
     if d.get("pains"):
         p = d["pains"][0]
         parts.append(f"住客評論中最需改善的面向是「{p['aspect']}」"
-                     f"(負評率 {p['neg_ratio']:.0%}),建議{p['tip']}。")
-    return " ".join(parts)
+                     f"(負評率 {p['neg_ratio']:.0%}),建議{p['tip']}")
+    out = "。".join(parts) + "。"
+    if q:
+        out += f" 建議行動:{q['action']}。"
+    return out
 
 
 def ai_summary(d: dict) -> tuple[str, str]:
@@ -103,11 +143,22 @@ def ai_summary(d: dict) -> tuple[str, str]:
         if not llm_available():
             return "規則摘要", _rule_summary(d)
         c = d.get("cal", {})
+        q = d.get("quadrant_info")
+        op = d.get("op_status")
+        # 把「真實檔期」與「營運狀態」一併餵給 LLM,避免只依模型下判斷
+        tier_ctx = d["tier"]
+        if q:
+            _v = c.get("d90", np.nan)
+            _s = "—" if (_v is None or np.isnan(_v)) else f"{_v:.0%}"
+            tier_ctx = (f"{d['tier']}(綜合分類:{q['label']} —— {q['desc']};"
+                        f"未來90天真實已訂率 {_s})")
+        if op and op[0] != "正常營運":
+            tier_ctx += f";營運狀態:{op[0]} — {op[1]}"
         provider, md = generate_advice({
             "name": d["name"], "district": d["district"],
             "room_type": d["room_type"], "price": d["price"],
             "vac_pred": d["vac_pred"], "prob": d["prob"],
-            "tier": d["tier"],
+            "tier": tier_ctx,
             "lime_reasons": [{"zh": f"{p['aspect']}負評率 {p['neg_ratio']:.0%}",
                               "weight_pp": p["neg_ratio"] * 100,
                               "direction": "up"} for p in d.get("pains", [])],
@@ -124,17 +175,42 @@ def to_markdown(d: dict, summary_src: str, summary: str) -> str:
     """組出 Markdown 月報。"""
     tier_zh = {"red": "🔴 高風險", "yellow": "🟡 觀察",
                "green": "🟢 安全"}.get(d["tier"], "")
+    c = d.get("cal")
+    q = d.get("quadrant_info")
+    op = d.get("op_status")
+
     L = [f"# 房源經營月報 — {d['name']}", "",
          f"> 房源 #{d['listing_id']} ｜ {d['district']} ｜ {d['room_type']} ｜ "
          f"每晚 {_fmt_money(d['price'])}",
          f"> 產生時間:{d['generated']}", "",
-         "## 一、風險摘要", "",
-         f"| 指標 | 數值 |", "|---|---|",
-         f"| 風險等級 | {tier_zh} |",
-         f"| 高風險機率 P(空屋率≥60%) | {d['prob']:.0%} |",
-         f"| 預測未來一年空屋率 | {d['vac_pred']:.0%} |", ""]
+         "## 一、綜合評估(體質 × 檔期)", ""]
 
-    c = d.get("cal")
+    if op and op[0] != "正常營運":
+        L += [f"> ⚠️ **營運狀態:{op[0]}** —— {op[1]}",
+              "> 下列模型指標以短租經營為前提推估,在此狀態下僅供參考。", ""]
+
+    if q:
+        L += [f"### {q['label']}", "",
+              f"{q['desc']}", "",
+              f"**建議行動**:{q['action']}", ""]
+
+    L += ["| 面向 | 指標 | 數值 | 性質 |", "|---|---|---|---|",
+          f"| 體質(模型推估) | 風險等級 | {tier_zh} | 依 2025-09 特徵推估 |",
+          f"| 體質(模型推估) | 高風險機率 P(空屋率≥60%) | {d['prob']:.0%} | "
+          f"GroupKFold OOF,前瞻 AUC 0.632 |",
+          f"| 體質(模型推估) | 預測未來一年空屋率 | {d['vac_pred']:.0%} | "
+          f"前瞻 R²≈0,僅供參考 |"]
+    if c:
+        s90 = "—" if np.isnan(c["d90"]) else f"{c['d90']:.0%}"
+        s30 = "—" if np.isnan(c["d30"]) else f"{c['d30']:.0%}"
+        L += [f"| **檔期(真實觀測)** | **未來 90 天已訂率** | **{s90}** | "
+              f"Inside Airbnb calendar,100% 觀測值 |",
+              f"| **檔期(真實觀測)** | **未來 30 天已訂率** | **{s30}** | "
+              f"近期日曆已開放,最可信 |"]
+    L += ["",
+          "> **判讀原則**:近期行動看檔期(真實觀測),長期投資看模型(體質推估)。"
+          "兩者衝突時以檔期為準 —— 模型特徵取自 2025-09 快照,"
+          "與檔期資料相隔約 9 個月,期間房東可能已調價或改善房源。", ""]
     if c:
         d30 = "—" if np.isnan(c["d30"]) else f"{c['d30']:.0%}"
         d90 = "—" if np.isnan(c["d90"]) else f"{c['d90']:.0%}"
