@@ -6,6 +6,7 @@
   📋 房源詳情   大風險分數 · LIME 原因 Top 3 · 改善建議(LLM/規則) · 趨勢線
   🗺 附近比較   地圖熱力圖 · 自己 vs 周邊風險 · 同商圈排名表 · 跨平台競品
   🔔 通知中心   60% 門檻高風險房源 · 通知紀錄 · 已處理狀態
+  📅 未來檔期   逐日訂房熱度 · 月度 vs 同商圈 · 空檔警示 · 營收最適定價
 """
 import numpy as np
 import pandas as pd
@@ -46,7 +47,7 @@ def load_all():
     preds = preds.merge(meta, on="id", how="left")
     dist_med = preds.groupby("neighbourhood_cleansed")["vac_pred"].median()
     preds["dist_med"] = preds["neighbourhood_cleansed"].map(dist_med)
-    return preds, ds
+    return preds, ds, df
 
 
 @st.cache_resource(show_spinner=False)
@@ -64,7 +65,7 @@ def sugg_engine():
     return _load_pkl("suggestion_engine")
 
 
-PREDS, DS = load_all()
+PREDS, DS, DF_RAW = load_all()
 BUNDLE = get_bundle()
 DS_IDX = DS.set_index("id")
 
@@ -103,10 +104,12 @@ st.markdown(f"""
   <h1 style="font-size:1.4rem;font-weight:700;color:{P['ink']};margin:0;">
   🏠 房東 Dashboard</h1>
   <p style="font-size:.78rem;color:{P['muted']};margin:4px 0 0;">
-  房東總覽 → 房源詳情(LIME)→ 附近比較 → 60% 通知中心</p>
+  房東總覽 → 房源詳情(LIME)→ 附近比較 → 60% 通知中心 → 未來檔期</p>
 </div><hr style="margin:0 0 12px;">""", unsafe_allow_html=True)
 
-TB1, TB2, TB3, TB4 = st.tabs(["🏠 房東總覽", "📋 房源詳情", "🗺 附近比較", "🔔 通知中心"])
+TB1, TB2, TB3, TB4, TB5, TB6 = st.tabs(
+    ["🏠 房東總覽", "📋 房源詳情", "🗺 附近比較", "🔔 通知中心",
+     "📅 未來檔期", "📄 月報"])
 
 
 def risk_ring(vac, color, size=92):
@@ -317,47 +320,77 @@ with TB2:
         _gaps = ([k for k, v in _cs["amenity_coverage"].items()
                   if v >= .5 and k not in _own_am][:3] if _cs else [])
 
-        # LLM 僅於「紅色高風險」觸發(依需求:高風險才由 LLM 給建議);
-        # 黃色觀察層與綠色安全層使用規則引擎。
+        # LLM 僅於「紅色高風險」提供,且一律「手動按鈕」觸發 ——
+        # 調整房價/最低入住天數時不自動呼叫,避免每拖一次滑桿就打一次 API。
+        _use_rules = True
         if _tier == "red":
             from modules.llm_advisor import llm_available, generate_advice
-            if llm_available():
-                mb(f"LLM 智慧建議({llm_available()})· 🔴 高風險觸發", warning=True)
-                try:
-                    @st.cache_data(show_spinner="🧠 LLM 生成個人化建議中 …", ttl=3600)
-                    def _llm_advice(_key: str, ctx: dict):
-                        return generate_advice(ctx)
+            _prov_name = llm_available()
+            if _prov_name:
+                mb(f"LLM 智慧建議({_prov_name})· 🔴 高風險觸發 · 手動產生",
+                   warning=True)
+                # 參數指紋:房價、最低天數、模型、房源任一改變即視為「已過期」
+                _sig = f"{sel_id}|{ALGO}|{_np_ if ROW is not None else 0}|" \
+                       f"{_nm if ROW is not None else 0}"
+                _store = st.session_state.setdefault("llm_advice_store", {})
+                _hit = _store.get(sel_id)
 
-                    _prov, _md = _llm_advice(
-                        f"{sel_id}-{ALGO}-{_tier}-{_np_ if ROW is not None else 0}",
-                        {"name": str(R["name"]), "district": R["neighbourhood_cleansed"],
-                         "room_type": ROOM_JP.get(R["room_type"], R["room_type"]),
-                         "price": float(R["price"]), "vac_pred": _vac,
-                         "prob": _prob, "tier": TIER_ZH[_tier][0],
-                         "lime_reasons": _lime_up,
-                         "comp_summary": (f"1km 內 {_cs['n_total']} 筆競品,"
-                                          f"同容量層貴於 {_cs['pp_percentile']:.0%}"
-                                          if _cs and _cs.get("pp_percentile") is not None
-                                          else "無資料"),
-                         "amenity_gaps": _gaps})
-                    st.markdown(_md)
-                    st.caption(f"由 {_prov} 生成;建議僅供參考,請依實際經營狀況判斷。")
-                except Exception as e:
-                    st.warning(f"LLM 呼叫失敗({type(e).__name__}),改用規則引擎建議。")
-                    _use_rules = True
-                else:
+                _b1, _b2 = st.columns([1, 1])
+                _clicked = _b1.button("🧠 產生 LLM 智慧建議", key=f"llm_go_{sel_id}",
+                                      use_container_width=True)
+                if _hit and _b2.button("🗑 清除", key=f"llm_clr_{sel_id}",
+                                       use_container_width=True):
+                    _store.pop(sel_id, None)
+                    _hit = None
+                    st.rerun()
+
+                if _clicked:
+                    with st.spinner("🧠 LLM 生成個人化建議中 …"):
+                        try:
+                            _prov, _md = generate_advice({
+                                "name": str(R["name"]),
+                                "district": R["neighbourhood_cleansed"],
+                                "room_type": ROOM_JP.get(R["room_type"], R["room_type"]),
+                                "price": float(_np_ if ROW is not None else R["price"]),
+                                "vac_pred": _vac, "prob": _prob,
+                                "tier": TIER_ZH[_tier][0],
+                                "lime_reasons": _lime_up,
+                                "comp_summary": (
+                                    f"1km 內 {_cs['n_total']} 筆競品,"
+                                    f"同容量層貴於 {_cs['pp_percentile']:.0%}"
+                                    if _cs and _cs.get("pp_percentile") is not None
+                                    else "無資料"),
+                                "amenity_gaps": _gaps})
+                            _store[sel_id] = {"sig": _sig, "prov": _prov,
+                                              "md": _md,
+                                              "at": pd.Timestamp.now().strftime("%H:%M")}
+                            _hit = _store[sel_id]
+                        except Exception as e:
+                            st.error(f"LLM 呼叫失敗:{type(e).__name__} — {e}")
+                            st.caption("常見原因:金鑰無效或未啟用 API、模型名稱已淘汰、"
+                                       "配額用盡、或雲端網路限制。下方仍提供規則引擎建議。")
+
+                if _hit:
+                    if _hit["sig"] != _sig:
+                        note("⚠️ 此建議是在<b>調整參數前</b>產生的"
+                             f"(生成於 {_hit['at']})。若要依目前的房價與"
+                             "最低入住天數重新生成,請再按一次上方按鈕。")
+                    st.markdown(_hit["md"])
+                    st.caption(f"由 {_hit['prov']} 於 {_hit['at']} 生成;"
+                               f"建議僅供參考,請依實際經營狀況判斷。")
                     _use_rules = False
+                else:
+                    note("👆 按上方按鈕即可產生 LLM 個人化建議"
+                         "(調整房價或最低入住天數<b>不會</b>自動觸發,避免重複呼叫 API)。"
+                         "以下先提供規則引擎建議。")
             else:
                 note("未設定 LLM 金鑰(ANTHROPIC_API_KEY / GEMINI_API_KEY),"
-                     "以下為規則引擎建議;設定金鑰後即自動改由 LLM 生成個人化建議。")
-                _use_rules = True
+                     "以下為規則引擎建議;設定金鑰後即可手動產生 LLM 個人化建議。")
         elif _tier == "yellow":
             note("🟡 觀察層:以下為規則引擎建議;LLM 個人化建議於"
-                 "🔴 紅色高風險(機率 ≥ 60%)時才會觸發。")
-            _use_rules = True
+                 "🔴 紅色高風險(機率 ≥ 60%)時才可手動產生。")
         else:
             note("🟢 綠色安全層:暫無需調整,以下為保持競爭力的常規檢查。")
-            _use_rules = True
 
         if _use_rules and _cs is not None:
             _shap_items = [(x["rule"].split(" ")[0], x["weight_pp"] / 100)
@@ -424,6 +457,11 @@ with TB2:
         st.caption("藍線 = 模型對「調價後」的 What-if 預測(price_pctl 已依同區同房型真實價格分佈"
                    "動態重排);菱形虛線 = **真實市場數據**:同區同房型房源在各價格帶的實際平均空屋率"
                    "(菱形越大樣本越多)。兩者趨勢一致代表模擬可信;樹模型對價格呈階梯狀反應屬正常。")
+
+    # ── 住客評論面向分析(ABSA)──
+    st.divider()
+    from modules.absa_sections import render_listing_absa
+    render_listing_absa(sel_id, R["neighbourhood_cleansed"])
 
 # ══════════════════════════════════════════════════════════════
 # TB3 附近比較(熱力圖 + 風險比較 + 同商圈排名 + 跨平台)
@@ -530,3 +568,50 @@ with TB4:
     from modules.notify_center import render_notify_center
     render_notify_center(host_id=host_id, prob_col=PROB_COL,
                          tier_col=TIER_COL, key="host_nc")
+
+
+# ══════════════════════════════════════════════════════════════
+# TB5 未來檔期(calendar.csv.gz · 獨立模組,不影響既有分頁)
+# ══════════════════════════════════════════════════════════════
+with TB5:
+    from modules.calendar_sections import render_calendar_tab
+    _sel5 = st.selectbox("選擇房源", list(_opt_lab.keys()), key="cal_sel")
+    _cid = _opt_lab[_sel5]
+    _crow = MY[MY["id"] == _cid].iloc[0]
+    render_calendar_tab(_cid, _crow, DF_RAW)
+
+
+# ══════════════════════════════════════════════════════════════
+# TB6 月報自動生成(純讀取既有分析,不影響其他分頁)
+# ══════════════════════════════════════════════════════════════
+with TB6:
+    from modules import report_builder as rb
+    sec("📄 房源經營月報自動生成")
+    mb("彙整風險等級 · 檔期進度 · 空檔明細 · 營收最適定價 · 評論面向 · AI 摘要")
+    _sel6 = st.selectbox("選擇房源", list(_opt_lab.keys()), key="rep_sel")
+    _rid = _opt_lab[_sel6]
+    _rrow = MY[MY["id"] == _rid].iloc[0]
+    _use_llm = st.checkbox("使用 LLM 生成 AI 摘要(需設定金鑰,較慢)", value=False,
+                           key="rep_llm")
+    if st.button("🧾 產生月報", key="rep_go"):
+        with st.spinner("彙整資料並生成月報 …"):
+            _d = rb.collect(_rrow, _rrow, DF_RAW, PROB_COL, TIER_COL)
+            if _use_llm:
+                _src, _sum = rb.ai_summary(_d)
+            else:
+                _src, _sum = "規則摘要", rb._rule_summary(_d)
+            _md = rb.to_markdown(_d, _src, _sum)
+        st.session_state["report_md"] = _md
+        st.session_state["report_name"] = f"月報_{_rid}_{_d['generated'][:10]}"
+        st.toast("月報已生成")
+    if st.session_state.get("report_md"):
+        _md = st.session_state["report_md"]
+        _nm = st.session_state.get("report_name", "月報")
+        _c1, _c2 = st.columns(2)
+        _c1.download_button("⬇️ 下載 Markdown", _md, file_name=f"{_nm}.md",
+                            mime="text/markdown", use_container_width=True)
+        _c2.download_button("⬇️ 下載 HTML(可列印/存 PDF)",
+                            rb.to_html(_md, _nm), file_name=f"{_nm}.html",
+                            mime="text/html", use_container_width=True)
+        with st.container(border=True):
+            st.markdown(_md)

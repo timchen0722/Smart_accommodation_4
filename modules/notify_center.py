@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """共用通知中心模組(房東入口 TB4 與後台分析共用)。
 
-功能(docx §四 60% 通知模組 + 2026-07-19 需求):
+功能(docx §四 60% 通知模組 + 2026-07-19/20 需求):
   • 門檻滑桿(作用於校準後高風險機率,預設 0.60)
+  • 📅 空檔警示觸發(2026-07-20 新增):未來 90 天內連續空檔達門檻亦發通知
   • 🤖 自動寄送:高風險房源自動產生「智慧建議」並模擬寄信;失敗列入待補寄
   • ✉️ 手動補寄:逐筆手動寄出(優先 LLM 建議,失敗退回規則引擎)
   • 通知紀錄(含建議內容預覽)與已處理狀態
+
+觸發邏輯:風險門檻與空檔門檻為「或」關係,任一成立即進入通知清單;
+清單會標示各筆是由哪個條件觸發(風險 / 空檔 / 兩者)。
 """
 from __future__ import annotations
 
@@ -27,10 +31,27 @@ AUTO_SEND_LIMIT = 30      # 單次自動寄送上限(避免一次跑太久)
 
 @st.cache_data(show_spinner="載入通知資料 …")
 def _notify_df() -> pd.DataFrame:
+    """通知母體:模型預測 + 房源資料 + 未來檔期空檔指標(若已產生)。"""
     preds = load_predictions()
     meta = load_listings()[["id", "name", "host_name", "amenities",
                             "description", "minimum_nights"]]
-    return preds.merge(meta, on="id", how="left")
+    df = preds.merge(meta, on="id", how="left")
+    # ── 併入空檔指標(來自 build_calendar_features.py)──
+    try:
+        from modules import calendar_analytics as ca
+        if ca.available():
+            cal = ca.healthy_metrics()[
+                ["listing_id", "gap_days_30d", "gap_longest_30d",
+                 "gap_days_90d", "gap_longest_90d", "gap_first_start_30d",
+                 "booked_rate_d30"]]
+            df = df.merge(cal, left_on="id", right_on="listing_id", how="left")
+    except Exception:
+        pass
+    for c in ["gap_days_30d", "gap_longest_30d",
+              "gap_days_90d", "gap_longest_90d"]:
+        if c not in df.columns:
+            df[c] = np.nan
+    return df
 
 
 @st.cache_resource(show_spinner=False)
@@ -46,8 +67,39 @@ def _comp():
         return None
 
 
+def _gap_advice(r: pd.Series) -> list:
+    """空檔專屬建議(依最長連續空檔天數給促銷強度)。"""
+    g = r.get("gap_days_30d")
+    if pd.isna(g) or g <= 0:
+        return []
+    longest = int(r.get("gap_longest_30d") or 0)
+    price = float(pd.to_numeric(r.get("price"), errors="coerce") or 0)
+    out = [f"未來 30 天有 {int(g)} 天空檔待填補"
+           + (f",以每晚 ${price:,.0f} 計約損失 ${price * g:,.0f} 營收" if price else "")]
+    if longest >= 21:
+        out.append(f"最長連續空檔達 {longest} 天:建議大幅折扣(20~30%)"
+                   f"或開放月租/長住方案以整段承接")
+    elif longest >= 10:
+        out.append(f"最長連續空檔 {longest} 天:建議限時折扣 10~15%,"
+                   f"並放寬最低入住天數至 1~2 晚")
+    else:
+        out.append(f"最長連續空檔 {longest} 天:建議設定最後一分鐘折扣"
+                   f"(入住前 7 天內 8~9 折)填補零散空檔")
+    # 評論痛點(若 ABSA 已產生)
+    try:
+        from modules.absa_sections import listing_pain_points
+        for p in listing_pain_points(int(r["id"]), top_k=2):
+            if p["neg_ratio"] >= 0.1:
+                out.append(f"住客最常抱怨「{p['aspect']}」"
+                           f"(負評率 {p['neg_ratio']:.0%}):{p['tip']}")
+    except Exception:
+        pass
+    return out
+
+
 def _rule_advice(r: pd.Series) -> list:
-    """規則引擎建議(自動寄送與 LLM 失敗時的後備)。"""
+    """規則引擎建議(自動寄送與 LLM 失敗時的後備);空檔房源優先給檔期建議。"""
+    gap_first = _gap_advice(r)
     comp = _comp()
     cs = {"amenity_coverage": {}, "n_total": 0}
     if comp is not None:
@@ -65,8 +117,9 @@ def _rule_advice(r: pd.Series) -> list:
             "minimum_nights": 0.0 if pd.isna(mn) else float(mn),
             "desc_len": float(len(str(r.get("description") or "")))},
         own_amenities=_canon_amenities(str(r.get("amenities", ""))))
-    return [f"{s['title']}:{s['detail']}" for s in sugs[:4]] or \
-        ["維持定價競爭力與服務品質,並持續觀察同商圈行情。"]
+    rule = [f"{s['title']}:{s['detail']}" for s in sugs[:3]]
+    out = gap_first + rule
+    return out or ["維持定價競爭力與服務品質,並持續觀察同商圈行情。"]
 
 
 def _llm_advice(r: pd.Series, prob: float) -> tuple[str, list]:
@@ -82,18 +135,37 @@ def _llm_advice(r: pd.Series, prob: float) -> tuple[str, list]:
     return provider, (lines or [md])
 
 
+def _gap_line(r: pd.Series) -> str:
+    """信件與清單用的空檔說明字串(無資料時回傳空字串)。"""
+    g = r.get("gap_days_30d")
+    if pd.isna(g) or g <= 0:
+        return ""
+    longest = int(r.get("gap_longest_30d") or 0)
+    start = str(r.get("gap_first_start_30d") or "")
+    return (f"  ・未來 30 天內空檔 {int(g)} 天"
+            f"(最長連續 {longest} 天{'、最近自 ' + start + ' 起' if start else ''})")
+
+
 def _compose(r: pd.Series, prob: float, th: float, advice: list,
-             source: str) -> dict:
+             source: str, reason: str = "風險") -> dict:
     to = fake_host_email(r.get("host_name"), r.get("host_id", 0))
     tips = "\n".join(f"  {i}. {a}" for i, a in enumerate(advice, 1))
+    gap = _gap_line(r)
+    head = {"風險": "空屋風險偏高", "空檔": "未來檔期出現長空檔",
+            "風險+空檔": "空屋風險偏高,且未來檔期出現長空檔"}.get(reason, "需要注意")
+    lines = [f"  ・高風險機率 {prob:.0%}(通知門檻 {th:.0%})",
+             f"  ・預測未來一年空屋率 {float(r['vac_pred']):.0%}"]
+    if gap:
+        lines.append(gap)
     body = (f"親愛的房東 {r.get('host_name') or ''} 您好,\n\n"
-            f"系統偵測到您的房源「{str(r['name'])[:40]}」空屋風險偏高:\n"
-            f"  ・高風險機率 {prob:.0%}(通知門檻 {th:.0%})\n"
-            f"  ・預測未來一年空屋率 {float(r['vac_pred']):.0%}\n\n"
+            f"系統偵測到您的房源「{str(r['name'])[:40]}」{head}:\n"
+            + "\n".join(lines) + "\n\n"
             f"為提升出租率,智慧建議如下({source}):\n{tips}\n\n"
-            f"詳情請登入房東入口查看 LIME 原因分析與跨平台競品比較。\n"
+            f"詳情請登入房東入口查看 LIME 原因分析、未來檔期空檔明細"
+            f"與跨平台競品比較。\n"
             f"— 智慧旅宿空屋率風險預警平台(模擬信件)")
-    return {"to": to, "subject": "【智慧旅宿平台】高空屋風險警示與改善建議",
+    return {"to": to,
+            "subject": f"【智慧旅宿平台】{head}警示與改善建議",
             "body": body}
 
 
@@ -101,6 +173,7 @@ def _log(r, prob, th, status, source, mail=None):
     st.session_state["notify_log"].insert(0, {
         "房源": f"#{int(r['id'])}", "收件者": (mail or {}).get("to", "—"),
         "機率": f"{prob:.0%}", "門檻": f"{th:.0%}",
+        "觸發原因": r.get("_reason") or "風險",
         "建議來源": source, "狀態": status,
         "時間": pd.Timestamp.now().strftime("%m-%d %H:%M"),
         "_body": (mail or {}).get("body", "")})
@@ -117,26 +190,58 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
         if k not in st.session_state:
             st.session_state[k] = v
 
-    c_th, c_auto = st.columns([2, 1])
-    th = c_th.slider("通知門檻(機率 ≥)", 0.30, 0.90, 0.60, 0.05,
+    has_gap = df["gap_days_90d"].notna().any()
+    c_th, c_gap, c_auto = st.columns([1.5, 1.5, 1])
+    th = c_th.slider("風險門檻(機率 ≥)", 0.30, 0.90, 0.60, 0.05,
                      key=f"{key}_th")
+    if has_gap:
+        gap_on = c_gap.checkbox("📅 同時納入空檔警示", value=True,
+                                key=f"{key}_gapon",
+                                help="未來 30 天內連續空檔達下列天數者,即使風險未達門檻也發通知。"
+                                     "採 30 天窗口是因近期日曆已開放,空檔才是真實訊號;"
+                                     "遠期多為房東尚未開放日曆")
+        gap_th = c_gap.slider("連續空檔 ≥(天)", 7, 30, 14, 1,
+                              key=f"{key}_gapth", disabled=not gap_on)
+    else:
+        gap_on, gap_th = False, 14
+        c_gap.caption("📅 空檔警示未啟用:請先執行 "
+                      "`python -X utf8 scripts/build_calendar_features.py`")
     auto = c_auto.toggle("🤖 自動寄送通知(模擬)", key=f"{key}_auto",
                          help=f"開啟後,達門檻且未寄過的房源自動產生智慧建議並模擬寄信"
                               f"(單次上限 {AUTO_SEND_LIMIT} 間;失敗可手動補寄)")
 
-    hits_all = df[df[prob_col] >= th]
+    # ── 觸發條件:風險 或 空檔(任一成立)──
+    risk_hit = df[prob_col] >= th
+    gap_hit = (df["gap_longest_30d"].fillna(0) >= gap_th) if gap_on \
+        else pd.Series(False, index=df.index)
+    df = df.assign(_risk_hit=risk_hit, _gap_hit=gap_hit)
+    df["_reason"] = np.select(
+        [risk_hit & gap_hit, risk_hit, gap_hit],
+        ["風險+空檔", "風險", "空檔"], default="")
+    hits_all = df[risk_hit | gap_hit]
     scope = hits_all if host_id is None else hits_all[hits_all["host_id"] == host_id]
-    scope = scope.sort_values(prob_col, ascending=False)
+    scope = scope.sort_values([prob_col, "gap_longest_30d"], ascending=False)
 
-    n1, n2, n3 = st.columns(3)
+    n1, n2, n3, n4 = st.columns(4)
     n1.metric("全平台觸發" if host_id is None else "本房東觸發",
               f"{len(scope):,} 間")
-    n2.metric("全平台觸發" if host_id is not None else "占比",
+    n2.metric("觸發原因分布",
+              f"風險 {int(scope['_risk_hit'].sum())}",
+              f"空檔 {int(scope['_gap_hit'].sum())} · 兩者 "
+              f"{int((scope['_risk_hit'] & scope['_gap_hit']).sum())}",
+              delta_color="off")
+    n3.metric("全平台觸發" if host_id is not None else "占比",
               f"{len(hits_all):,} 間" if host_id is not None
               else f"{len(hits_all)/len(df):.0%}",
               f"占比 {len(hits_all)/len(df):.0%}" if host_id is not None else None,
               delta_color="off")
-    n3.metric("已處理", f"{sum(st.session_state['processed'].values())} 間")
+    n4.metric("已處理", f"{sum(st.session_state['processed'].values())} 間")
+    if gap_on:
+        _only_gap = int((scope["_gap_hit"] & ~scope["_risk_hit"]).sum())
+        if _only_gap:
+            note(f"📅 其中 <b>{_only_gap}</b> 間是<b>僅由空檔條件</b>觸發 —— "
+                 f"風險分數未達標,但未來 90 天有連續 {gap_th} 天以上無訂單,"
+                 f"屬於「模型看不出來、但檔期已經在流血」的房源。")
 
     # ── 自動寄送 ──
     if auto:
@@ -148,7 +253,8 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
                 prob = float(r[prob_col])
                 try:
                     advice = _rule_advice(r)     # 批次自動寄送用規則引擎(快且穩)
-                    mail = _compose(r, prob, th, advice, "規則引擎")
+                    mail = _compose(r, prob, th, advice, "規則引擎",
+                                    reason=r.get("_reason") or "風險")
                     _log(r, prob, th, "自動寄送成功(模擬)", "規則引擎", mail)
                     ok += 1
                 except Exception as e:           # 建議產生失敗 → 留待手動補寄
@@ -171,19 +277,30 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
         sent = hid in st.session_state["auto_sent"]
         t_zh, t_key = TIER_ZH.get(h[tier_col], TIER_ZH["yellow"])
         t_c = P[t_key]
+        reason = h.get("_reason") or "風險"
+        r_badge = {"風險": ("⚠️ 風險", P["high"]),
+                   "空檔": ("📅 空檔", P["primary"]),
+                   "風險+空檔": ("⚠️📅 風險+空檔", P["accent"])}.get(
+            reason, ("⚠️ 風險", P["high"]))
+        gap_txt = ""
+        if pd.notna(h.get("gap_longest_30d")) and h.get("gap_longest_30d", 0) > 0:
+            gap_txt = (f"·📅 30天空檔 {int(h['gap_days_30d'])} 天"
+                       f"(最長 {int(h['gap_longest_30d'])} 天)")
         cc1, cc2, cc3 = st.columns([3, 1, 1])
         with cc1:
             st.markdown(
                 f"<div style='background:{P['surface']};border:1px solid {P['border']};"
                 f"border-left:4px solid {t_c};border-radius:0 10px 10px 0;"
                 f"padding:9px 14px;{'opacity:.55;' if done else ''}'>"
-                f"<b>#{hid}</b> {str(h['name'])[:32]}"
+                f"<b>#{hid}</b> {str(h['name'])[:30]}"
                 f"<span style='background:{t_c};color:#fff;border-radius:10px;"
                 f"padding:1px 9px;font-size:.7rem;font-weight:700;margin-left:8px;'>"
                 f"{t_zh} {prob:.0%}</span>"
+                f"<span style='background:{r_badge[1]};color:#fff;border-radius:10px;"
+                f"padding:1px 9px;font-size:.68rem;font-weight:700;margin-left:5px;'>"
+                f"{r_badge[0]}</span>"
                 f"<span style='color:{P['muted']};font-size:.74rem;margin-left:8px;'>"
-                f"{h['neighbourhood_cleansed']}·空屋率 {h['vac_pred']:.0%}"
-                f"·{h.get('host_name') or ''}"
+                f"{h['neighbourhood_cleansed']}·空屋率 {h['vac_pred']:.0%}{gap_txt}"
                 f"{'·📨 已寄' if sent else ''}{'·✅ 已處理' if done else ''}"
                 f"</span></div>", unsafe_allow_html=True)
         with cc2:
@@ -200,7 +317,8 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
                     except Exception as e:
                         src, advice = "規則引擎(LLM 失敗後備)", _rule_advice(h)
                         status = f"手動寄送成功(模擬,LLM 失敗:{type(e).__name__})"
-                    mail = _compose(h, prob, th, advice, src)
+                    mail = _compose(h, prob, th, advice, src,
+                                    reason=h.get("_reason") or "風險")
                     _log(h, prob, th, status, src, mail)
                     st.session_state["auto_sent"].add(hid)
                 st.toast(f"已模擬寄送至 {mail['to']}")
@@ -216,7 +334,8 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
     log = st.session_state["notify_log"]
     if log:
         html_table(pd.DataFrame(log)[["房源", "收件者", "機率", "門檻",
-                                      "建議來源", "狀態", "時間"]], height=230)
+                                      "觸發原因", "建議來源", "狀態", "時間"]],
+                   height=230)
         with st.expander("📧 檢視最新一封信件內容(含智慧建議)"):
             st.code(log[0].get("_body") or "(無內容)")
         st.caption("模擬示範:實際部署可串接 SMTP / SendGrid / LINE Notify;"

@@ -91,9 +91,12 @@ def build_nlp_extra() -> pd.DataFrame:
     cache = DATA_DIR / "_nlp_extra.csv"
     if cache.exists():
         return pd.read_csv(cache)
+    head = pd.read_csv(DATA_DIR / "reviews_cleaned.csv.gz", nrows=2)
+    text_col = ("cleaned_comments" if "cleaned_comments" in head.columns
+                else "comments")
     rv = pd.read_csv(DATA_DIR / "reviews_cleaned.csv.gz",
-                     usecols=["listing_id", "cleaned_comments"])
-    txt = rv["cleaned_comments"].astype(str).str.lower()
+                     usecols=["listing_id", text_col])
+    txt = rv[text_col].astype(str).str.lower()
     neg = pd.Series(False, index=rv.index)
     for w in NEG_WORDS:
         neg |= txt.str.contains(w, regex=False)

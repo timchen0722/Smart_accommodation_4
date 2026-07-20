@@ -245,14 +245,24 @@ with st.expander("📐 模型品質（GroupKFold(host_id) 5 折誠實驗證）")
 
 # ─── 研究級分頁：模型與誠實評估 / SHAP 可解釋性（v4 雙模型）─────
 st.divider()
-_tab_model, _tab_shap, _tab_nc = st.tabs(
+_tab_model, _tab_shap, _tab_fwd, _tab_pf, _tab_absa, _tab_nc = st.tabs(
     ["📐 模型與誠實評估（LightGBM vs XGBoost）", "🔍 SHAP 可解釋性",
+     "🎯 前瞻驗證（真實未來）", "💼 房型獲利分析", "💬 評論面向分析",
      "🔔 通知中心（全平台）"])
 from modules.backend_v2_sections import render_model_tab_v2, render_shap_tab_v2
+from modules.portfolio_sections import (render_portfolio_tab,
+                                        render_forward_validation_tab)
 from modules.notify_center import render_notify_center
 with _tab_model:
     render_model_tab_v2()
 with _tab_shap:
     render_shap_tab_v2()
+with _tab_fwd:
+    render_forward_validation_tab()
+with _tab_pf:
+    render_portfolio_tab()
+with _tab_absa:
+    from modules.absa_sections import render_market_absa
+    render_market_absa()
 with _tab_nc:
     render_notify_center(host_id=None, key="admin_nc")

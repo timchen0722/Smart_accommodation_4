@@ -1,0 +1,24 @@
+{
+ "n_matched": 4227,
+ "listings_scraped": "2025-09-30",
+ "calendar_scraped": "2026-06-30",
+ "gap_months": 9,
+ "real_vacancy_mean": 0.5411363997264811,
+ "pred_vacancy_mean": 0.5156781641826355,
+ "real_high_risk_rate": 0.39791814525668323,
+ "reg_corr": 0.2886712788589073,
+ "reg_r2": 0.0028836482489542625,
+ "clf_auc": 0.6318183517143264,
+ "red": {
+  "threshold": 0.6,
+  "n_flag": 603,
+  "precision": 0.5704809286898839,
+  "recall": 0.20451843043995244
+ },
+ "yellow": {
+  "threshold": 0.35,
+  "n_flag": 2158,
+  "precision": 0.494902687673772,
+  "recall": 0.6349583828775267
+ }
+}

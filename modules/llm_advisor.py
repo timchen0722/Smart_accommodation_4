@@ -92,6 +92,7 @@ def generate_advice(ctx: dict) -> tuple[str, str]:
     key = _secret("GEMINI_API_KEY")
     models = [GEMINI_MODEL] + [m for m in GEMINI_FALLBACKS if m != GEMINI_MODEL]
     last_err: Exception | None = None
+    errs = []
     try:
         from google import genai
         client = genai.Client(api_key=key)
@@ -102,7 +103,9 @@ def generate_advice(ctx: dict) -> tuple[str, str]:
                 return f"gemini({model})", resp.text
             except Exception as e:  # 404 模型名/配額等,換下一個模型名再試
                 last_err = e
-        raise RuntimeError(f"Gemini 各模型皆失敗:{last_err}")
+                errs.append(f"{model}: {type(e).__name__} {str(e)[:120]}")
+        # 保留每個模型的真實錯誤訊息,便於判斷是金鑰、模型名還是配額問題
+        raise RuntimeError("Gemini SDK 各模型皆失敗 → " + " | ".join(errs))
     except ImportError:
         pass  # 未裝 SDK → 退回 REST
 
@@ -112,10 +115,9 @@ def generate_advice(ctx: dict) -> tuple[str, str]:
             f"{model}:generateContent",
             params={"key": key}, timeout=TIMEOUT_S,
             json={"contents": [{"parts": [{"text": prompt}]}]})
-        if r.status_code == 404:      # 模型名不存在 → 試下一個
-            last_err = RuntimeError(f"{model}: 404 {r.text[:120]}")
+        if r.status_code >= 400:      # 模型名不存在/金鑰無效/配額 → 試下一個
+            errs.append(f"{model}: HTTP {r.status_code} {r.text[:120]}")
             continue
-        r.raise_for_status()
         return f"gemini({model})", \
             r.json()["candidates"][0]["content"]["parts"][0]["text"]
-    raise RuntimeError(f"Gemini REST 各模型皆失敗:{last_err}")
+    raise RuntimeError("Gemini REST 各模型皆失敗 → " + " | ".join(errs))
