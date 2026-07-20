@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-"""房東入口 — 房東 Dashboard(依專題 Workflow docx §四/§五 重新製作)
+"""房東入口 — 房東營運面板
 
-四視圖:
-  🏠 房東總覽   房源卡片 · 風險分數環 · 等級色 · 趨勢箭頭
-  📋 房源詳情   大風險分數 · LIME 原因 Top 3 · 改善建議(LLM/規則) · 趨勢線
-  🗺 附近比較   地圖熱力圖 · 自己 vs 周邊風險 · 同商圈排名表 · 跨平台競品
-  🔔 通知中心   60% 門檻高風險房源 · 通知紀錄 · 已處理狀態
-  📅 未來檔期   逐日訂房熱度 · 月度 vs 同商圈 · 空檔警示 · 營收最適定價
+分頁順序即使用順序,四項主打在前、模型診斷在後:
+  房源總表   多房源優先序(體質 × 檔期四象限)· 空檔天數與機會成本
+  定價情報   1km 內四平台每人每晚落點 · 同商圈同房型真實已訂率基準 · 周邊地圖
+  口碑情報   評論 14 面向負評率 vs 同區基準 · 優先改善清單
+  未來檔期   逐日訂房熱度 · 月度 vs 同商圈 · 空檔警示 · 營收最適定價
+  風險診斷   模型分數 · LIME 原因 · What-if(前瞻 AUC 0.632,僅供輔助)
+  通知中心   風險或空檔觸發 · 自動/手動寄送 · 已處理狀態
+  月報       彙整以上為可下載報告
 """
 import numpy as np
 import pandas as pd
@@ -108,14 +110,17 @@ with st.sidebar:
 st.markdown(f"""
 <div style="padding:6px 0 10px;">
   <h1 style="font-size:1.4rem;font-weight:700;color:{P['ink']};margin:0;">
-  🏠 房東 Dashboard</h1>
+  房東營運面板</h1>
   <p style="font-size:.78rem;color:{P['muted']};margin:4px 0 0;">
-  房東總覽 → 房源詳情(LIME)→ 附近比較 → 60% 通知中心 → 未來檔期</p>
+  多房源優先序 · 跨平台定價落點 · 評論面向拆解 · 真實檔期基準</p>
 </div><hr style="margin:0 0 12px;">""", unsafe_allow_html=True)
 
-TB1, TB2, TB3, TB4, TB5, TB6 = st.tabs(
-    ["🏠 房東總覽", "📋 房源詳情", "🗺 附近比較", "🔔 通知中心",
-     "📅 未來檔期", "📄 月報"])
+# 分頁順序 = 使用順序:先看該處理哪間,再看定價、口碑、檔期;
+# 模型與 LIME 診斷退居後排(前瞻驗證 AUC 0.632,僅作輔助排序)。
+TB1, TB2P, TB2R, TB5, TB2, TB4, TB6 = st.tabs(
+    ["房源總表", "定價情報", "口碑情報", "未來檔期",
+     "風險診斷", "通知中心", "月報"])
+TB3 = TB2P          # 「周邊比較」內容併入定價情報分頁
 
 
 def risk_ring(vac, color, size=92):
@@ -146,15 +151,20 @@ def trend_arrow(row):
 # TB1 房東總覽
 # ══════════════════════════════════════════════════════════════
 with TB1:
-    k1, k2, k3, k4 = st.columns(4)
+    _gapd = MY["gap_days_30d"].fillna(0)
+    _gapv = (MY["price"].fillna(0) * _gapd).sum()
+    _alarm = int((MY["quadrant"] == "alarm").sum())
+    k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("名下房源", f"{len(MY)} 間")
-    k2.metric("平均預測空屋率", f"{MY['vac_pred'].mean()*100:.0f}%")
-    k3.metric("🔴 高風險", f"{int((MY[TIER_COL] == 'red').sum())} 間",
-              f"🟡 觀察 {int((MY[TIER_COL] == 'yellow').sum())} 間", delta_color="off")
-    k4.metric("最需優先處理",
-              f"#{int(MY.sort_values(PROB_COL, ascending=False).iloc[0]['id'])}"
-              if len(MY) else "—",
-              "依高風險機率排序", delta_color="off")
+    k2.metric("近 30 天訂房率",
+              "—" if MY["booked_rate_d30"].isna().all()
+              else f"{MY['booked_rate_d30'].mean()*100:.0f}%",
+              "真實日曆", delta_color="off")
+    k3.metric("30 天空檔", f"{int(_gapd.sum())} 天",
+              f"約 NT$ {_gapv:,.0f}", delta_color="off")
+    k4.metric("需優先處理", f"{_alarm} 間", "檔期空且體質偏弱", delta_color="off")
+    k5.metric("平均預測空屋率", f"{MY['vac_pred'].mean()*100:.0f}%",
+              "模型推估·僅供參考", delta_color="off")
     # ── 體質 × 檔期 四象限 ──
     sec("體質(模型)× 檔期(真實已訂率)四象限")
     mb("模型 AUC 0.632 為體質推估;calendar 已訂率為 100% 真實觀測 · "
@@ -486,10 +496,21 @@ with TB2:
                    "動態重排);菱形虛線 = **真實市場數據**:同區同房型房源在各價格帶的實際平均空屋率"
                    "(菱形越大樣本越多)。兩者趨勢一致代表模擬可信;樹模型對價格呈階梯狀反應屬正常。")
 
-    # ── 住客評論面向分析(ABSA)──
-    st.divider()
+    st.caption("住客評論的面向拆解已移至「口碑情報」分頁。")
+
+# ══════════════════════════════════════════════════════════════
+# 口碑情報:評論拆成 14 個面向,與同區基準對照
+# ══════════════════════════════════════════════════════════════
+with TB2R:
     from modules.absa_sections import render_listing_absa
-    render_listing_absa(sel_id, R["neighbourhood_cleansed"])
+    _selR = st.selectbox("選擇房源", list(_opt_lab.keys()), key="rep_tab_sel")
+    _rid2 = _opt_lab[_selR]
+    _rrow2 = MY[MY["id"] == _rid2].iloc[0]
+    render_listing_absa(_rid2, _rrow2["neighbourhood_cleansed"])
+    st.caption("面向以中英關鍵詞比對,情感取關鍵詞前後 30 字的局部窗口計分;"
+               "提及少於 3 次者不列入。全市負評率最高:空調冷氣 15.7%、"
+               "隔音噪音 13.6%、空間大小 13.4%。")
+
 
 # ══════════════════════════════════════════════════════════════
 # TB3 附近比較(熱力圖 + 風險比較 + 同商圈排名 + 跨平台)
@@ -499,6 +520,86 @@ with TB3:
     bid = _opt_lab[_sel3]
     B = MY[MY["id"] == bid].iloc[0]
     _blat, _blon = float(B["latitude"]), float(B["longitude"])
+
+    # ── 跨平台定價落點(主打:Airbnb 後台看不到的資訊)──
+    sec(f"跨平台定價落點({radius}m 內 · 591 / Booking / 租租網 / Airbnb)")
+    mb("月租平台掛牌價 ÷30 換算為每晚等效價,再除以可住人數 —— "
+       "統一為「每人每晚」才能跨平台比較(未計押金、管理費與最短租期)")
+    try:
+        _cs0 = comp_index().stats(
+            _blat, _blon,
+            listing_pp_day=float(B["price"]) / max(float(B["accommodates"]), 1),
+            bracket=capacity_bracket(B["accommodates"]),
+            radius_m=float(radius), exclude_listing_id=int(bid))
+        _my_pp = float(B["price"]) / max(float(B["accommodates"]), 1)
+        _pc = st.columns(5)
+        _pc[0].metric("我的每人每晚", f"${_my_pp:,.0f}",
+                      f"每晚 ${float(B['price']):,.0f}", delta_color="off")
+        for _i, _pl in enumerate(["Airbnb", "Booking", "591", "ddroom"], start=1):
+            _v = _cs0["platforms"].get(_pl)
+            _pc[_i].metric(
+                {"ddroom": "租租網"}.get(_pl, _pl),
+                f"{_v['count']} 筆" if _v else "0 筆",
+                f"中位 ${_v['pp_median']:,.0f}" if _v else None,
+                delta_color="off")
+        _pp0 = _cs0.get("pp_percentile")
+        if _pp0 is not None:
+            _pcol = (P["high"] if _pp0 >= .6 else
+                     (P["medium"] if _pp0 >= .4 else P["low"]))
+            note(f"同容量層({B['bracket'] if 'bracket' in B else capacity_bracket(B['accommodates'])})"
+                 f"共 {_cs0['n_same_bracket']} 筆競品,你的每人每晚 "
+                 f"<b style='color:{_pcol}'>貴於 {_pp0:.0%}</b>,"
+                 f"同層中位為 <b>${_cs0['bracket_pp_median']:,.0f}</b>。")
+        else:
+            note(f"同容量層競品不足 5 筆,暫不計算價格落點。")
+
+        # 設施缺口(跨平台競品過半具備、本房源沒有)
+        _own0 = _canon_amenities(str(B.get("amenities", "")))
+        _gap0 = [(k, v) for k, v in _cs0.get("amenity_coverage", {}).items()
+                 if v >= .5 and k not in _own0][:4]
+        if _gap0:
+            note("設施缺口:" + "、".join(
+                f"<b>{k}</b>(周邊 {v:.0%} 具備)" for k, v in _gap0)
+                + " —— 這些是同商圈的標配。")
+    except FileNotFoundError:
+        st.caption("競品索引未建置,請執行 scripts/train_backend_models.py。")
+
+    # ── 同商圈同房型的真實已訂率基準 ──
+    sec("同商圈同房型 真實已訂率基準")
+    mb("取自 Inside Airbnb 日曆的實際訂房狀態,非模型推估")
+    _peer = PREDS[(PREDS["neighbourhood_cleansed"] == B["neighbourhood_cleansed"])
+                  & (PREDS["room_type"] == B["room_type"])]
+    _peer = _peer[_peer["booked_rate_d90"].notna()]
+    if len(_peer) >= 10:
+        _b1, _b2, _b3, _b4 = st.columns(4)
+        _mine90 = B.get("booked_rate_d90")
+        _mine30 = B.get("booked_rate_d30")
+        _b1.metric("我的 90 天訂房率",
+                   "—" if pd.isna(_mine90) else f"{_mine90:.0%}")
+        _b2.metric("同商圈同房型中位",
+                   f"{_peer['booked_rate_d90'].median():.0%}",
+                   f"{len(_peer)} 間", delta_color="off")
+        if pd.notna(_mine90):
+            _rank = float((_peer["booked_rate_d90"] < _mine90).mean())
+            _b3.metric("我的排名", f"贏過 {_rank:.0%}",
+                       "同商圈同房型", delta_color="off")
+        _b4.metric("我的 30 天訂房率",
+                   "—" if pd.isna(_mine30) else f"{_mine30:.0%}")
+        _figB = px.histogram(_peer, x="booked_rate_d90", nbins=20,
+                             color_discrete_sequence=[P["primary"]],
+                             labels={"booked_rate_d90": "未來 90 天訂房率"})
+        if pd.notna(_mine90):
+            _figB.add_vline(x=float(_mine90), line_dash="dot",
+                            line_color=P["high"], annotation_text="我的位置")
+        apply_theme(_figB, h=260).update_layout(
+            title=f"{B['neighbourhood_cleansed']}·"
+                  f"{ROOM_JP.get(B['room_type'], B['room_type'])} 訂房率分佈",
+            yaxis_title="房源數")
+        st.plotly_chart(_figB, width="stretch")
+    else:
+        st.caption("同商圈同房型樣本不足 10 間,不建立基準。")
+
+    st.divider()
 
     # 附近 Airbnb(半徑內)
     _d = PREDS.copy()
@@ -571,7 +672,7 @@ with TB3:
         else:
             st.info("半徑內無其他房源。")
 
-    # 跨平台補充
+    # (跨平台落點已移至本分頁最上方)
     try:
         _cs3 = comp_index().stats(
             _blat, _blon,

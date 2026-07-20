@@ -245,10 +245,11 @@ with st.expander("📐 模型品質（GroupKFold(host_id) 5 折誠實驗證）")
 
 # ─── 研究級分頁：模型與誠實評估 / SHAP 可解釋性（v4 雙模型）─────
 st.divider()
-_tab_model, _tab_shap, _tab_fwd, _tab_pf, _tab_absa, _tab_nc = st.tabs(
-    ["📐 模型與誠實評估（LightGBM vs XGBoost）", "🔍 SHAP 可解釋性",
-     "🎯 前瞻驗證（真實未來）", "💼 房型獲利分析", "💬 評論面向分析",
-     "🔔 通知中心（全平台）"])
+# 主打在前:市場獲利與口碑;模型與可解釋性退居後排作為方法佐證
+_tab_pf, _tab_absa, _tab_nc, _tab_model, _tab_fwd, _tab_shap = st.tabs(
+    ["市場獲利地圖", "評論面向分析", "通知中心（全平台）",
+     "模型評估（LightGBM vs XGBoost）", "前瞻驗證（真實未來）",
+     "SHAP 可解釋性"])
 from modules.backend_v2_sections import render_model_tab_v2, render_shap_tab_v2
 from modules.portfolio_sections import (render_portfolio_tab,
                                         render_forward_validation_tab)
