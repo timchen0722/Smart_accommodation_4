@@ -40,6 +40,8 @@ ASPECT_TIP = {
     "空間大小": "照片與文案誠實標示坪數,避免期待落差;優化收納",
     "設備廚房": "補齊常用家電與廚具,並在設施清單完整列出",
     "入住流程": "改用自助入住(密碼鎖),提供圖文入住指引",
+    "早餐餐飲": "提供簡易早餐包或咖啡機;文案標示周邊早餐店與便利商店",
+    "停車": "洽談鄰近停車場合作優惠;文案標示機車停放與收費停車場位置",
 }
 
 
@@ -105,7 +107,10 @@ def render_listing_absa(listing_id: int, district: str | None = None):
     mine = mine.sort_values("neg_ratio", ascending=False)
 
     sec("💬 住客評論面向分析(ABSA)")
-    mb("12 面向詞典 + 局部情感窗口 · 離線預計算 · 提及數 <3 不列入")
+    mb("14 面向詞典 + 局部情感窗口 · 離線預計算 · 提及數 <3 不列入")
+
+    # ── 評論自動摘要(規則版即時顯示;LLM 版手動觸發)──
+    _render_summary(listing_id, district)
 
     c1, c2 = st.columns([1.3, 1])
     with c1:
@@ -145,6 +150,49 @@ def render_listing_absa(listing_id: int, district: str | None = None):
         lambda v: "—" if pd.isna(v) else f"{v:.0%}")
     html_table(show[["面向", "提及則數", "正評", "負評", "負評率", "市場基準"]],
                height=260)
+
+
+def _render_summary(listing_id: int, district: str | None = None,
+                    name: str = ""):
+    """評論自動摘要區塊:規則版立即顯示,LLM 版由按鈕手動觸發。"""
+    from modules import review_summary as rs
+
+    reviews = None
+    try:                                   # 關鍵字需要原始評論,取不到就只用 ABSA
+        from modules.data_loader import load_reviews
+        reviews = load_reviews()
+    except Exception:
+        pass
+
+    @st.cache_data(show_spinner=False)
+    def _facts(lid: int):
+        return rs.collect_facts(lid, reviews)
+
+    f = _facts(int(listing_id))
+    store = st.session_state.setdefault("rev_sum_store", {})
+    hit = store.get(int(listing_id))
+
+    st.markdown(
+        f"<div style='background:{P['mbg']};border:1px solid #C8DCF0;"
+        f"border-radius:10px;padding:12px 16px;margin:6px 0 10px;"
+        f"font-size:.87rem;line-height:1.85;color:{P['ink2']};'>"
+        f"<b>📝 評論自動摘要</b>({'LLM 生成' if hit else '規則版'})<br>"
+        f"{hit['text'] if hit else rs.rule_summary(f)}</div>",
+        unsafe_allow_html=True)
+
+    b1, b2 = st.columns([1, 3])
+    if b1.button("🧠 用 LLM 重寫摘要", key=f"rsum_{listing_id}",
+                 use_container_width=True):
+        with st.spinner("LLM 生成評論摘要中 …"):
+            try:
+                prov, txt = rs.llm_summary(f, name, district or "")
+                store[int(listing_id)] = {"prov": prov, "text": txt}
+                st.rerun()
+            except Exception as e:
+                st.error(f"LLM 摘要失敗:{type(e).__name__} — {e}")
+    if hit:
+        b2.caption(f"由 {hit['prov']} 生成 · 再按一次可重新生成 · "
+                   f"切換房源會回到規則版")
 
 
 def render_market_absa():

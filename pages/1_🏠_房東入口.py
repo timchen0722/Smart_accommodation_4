@@ -66,6 +66,9 @@ def sugg_engine():
 
 
 PREDS, DS, DF_RAW = load_all()
+# ── 體質(模型) × 檔期(calendar)四象限分類 ──
+from modules import quadrant as QD
+PREDS = QD.annotate(QD.attach_calendar(PREDS), tier_col="tier")
 BUNDLE = get_bundle()
 DS_IDX = DS.set_index("id")
 
@@ -93,6 +96,9 @@ with st.sidebar:
     # 全站統一口徑:所有風險值皆為所選模型之 GroupKFold OOF 誠實預測
     PROB_COL = "prob_xgb" if (ALGO == "xgb" and "prob_xgb" in PREDS.columns) else "prob"
     TIER_COL = "tier_xgb" if (ALGO == "xgb" and "tier_xgb" in PREDS.columns) else "tier"
+    if TIER_COL != "tier":
+        PREDS = QD.annotate(PREDS, tier_col=TIER_COL)
+        MY = PREDS[PREDS["host_id"] == host_id].reset_index(drop=True)
 
     radius = st.slider("📏 附近比較半徑 (公尺)", 500, 2000, 1000, step=100)
     st.divider()
@@ -149,8 +155,24 @@ with TB1:
               f"#{int(MY.sort_values(PROB_COL, ascending=False).iloc[0]['id'])}"
               if len(MY) else "—",
               "依高風險機率排序", delta_color="off")
-    sec("房源卡片(風險分數環 = 高風險機率 P(空屋率≥60%),環色 = 等級;箭頭 = 空屋率與同商圈中位比較)")
-    _cards = MY.sort_values(PROB_COL, ascending=False).reset_index(drop=True)
+    # ── 體質 × 檔期 四象限 ──
+    sec("體質(模型)× 檔期(真實已訂率)四象限")
+    mb("模型 AUC 0.632 為體質推估;calendar 已訂率為 100% 真實觀測 · "
+       "兩者衝突時以檔期為準(近期行動看檔期,長期投資看模型)")
+    _qs = QD.summary(MY)
+    _qcols = st.columns(len(_qs) if len(_qs) else 1)
+    for _col, (_, _qr) in zip(_qcols, _qs.iterrows()):
+        _col.metric(_qr["象限"], f"{_qr['房源數']} 間")
+    html_table(_qs, wrap=True, scroll=False)
+
+    _qopts = ["全部"] + _qs["象限"].tolist()
+    _qpick = st.radio("篩選象限", _qopts, horizontal=True, key="q_filter")
+    _cards = MY.copy()
+    if _qpick != "全部":
+        _cards = _cards[_cards["quadrant_label"] == _qpick]
+    sec(f"房源卡片({len(_cards)} 間)· 風險環 = 高風險機率;箭頭 = 空屋率與同商圈中位比較")
+    _cards = _cards.sort_values(["quadrant_priority", PROB_COL],
+                                ascending=[True, False]).reset_index(drop=True)
     for _s in range(0, len(_cards), 3):
         cols = st.columns(3)
         for _c, (_, r) in zip(cols, _cards.iloc[_s:_s + 3].iterrows()):
@@ -174,6 +196,12 @@ with TB1:
      padding:2px 10px;font-weight:700;font-size:.72rem;">{t_zh}</span>
     <span style="font-size:.72rem;color:{P['muted']};">
      預測空屋率 {r['vac_pred']*100:.0f}%</span></div>
+   <div style="font-size:.73rem;margin:2px 0;">
+    <span style="background:{P[QD.QUADRANTS[r['quadrant']]['color']]};color:#fff;
+     border-radius:10px;padding:1px 8px;font-weight:700;font-size:.68rem;">
+     {r['quadrant_label']}</span>
+    <span style="color:{P['muted']};margin-left:5px;">
+     {'90天實訂 ' + format(r['booked_rate_d90']*100, '.0f') + '%' if r['booked_rate_d90'] == r['booked_rate_d90'] else '無檔期資料'}</span></div>
    <div style="font-size:.74rem;">{trend_arrow(r)}</div>
   </div></div></div>""", unsafe_allow_html=True)
 

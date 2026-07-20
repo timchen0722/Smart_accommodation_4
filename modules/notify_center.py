@@ -43,12 +43,12 @@ def _notify_df() -> pd.DataFrame:
             cal = ca.healthy_metrics()[
                 ["listing_id", "gap_days_30d", "gap_longest_30d",
                  "gap_days_90d", "gap_longest_90d", "gap_first_start_30d",
-                 "booked_rate_d30"]]
+                 "booked_rate_d30", "booked_rate_d90"]]
             df = df.merge(cal, left_on="id", right_on="listing_id", how="left")
     except Exception:
         pass
     for c in ["gap_days_30d", "gap_longest_30d",
-              "gap_days_90d", "gap_longest_90d"]:
+              "gap_days_90d", "gap_longest_90d", "booked_rate_d90"]:
         if c not in df.columns:
             df[c] = np.nan
     return df
@@ -220,7 +220,11 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
         ["風險+空檔", "風險", "空檔"], default="")
     hits_all = df[risk_hit | gap_hit]
     scope = hits_all if host_id is None else hits_all[hits_all["host_id"] == host_id]
-    scope = scope.sort_values([prob_col, "gap_longest_30d"], ascending=False)
+    # 依「體質 × 檔期」象限排優先序:真警報 > 隱形危機 > 靠降價撐住 > 健康
+    from modules import quadrant as QD
+    scope = QD.annotate(scope, tier_col=tier_col)
+    scope = scope.sort_values(["quadrant_priority", prob_col, "gap_longest_30d"],
+                              ascending=[True, False, False])
 
     n1, n2, n3, n4 = st.columns(4)
     n1.metric("全平台觸發" if host_id is None else "本房東觸發",
@@ -236,6 +240,11 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
               f"占比 {len(hits_all)/len(df):.0%}" if host_id is not None else None,
               delta_color="off")
     n4.metric("已處理", f"{sum(st.session_state['processed'].values())} 間")
+    _qcnt = scope["quadrant_label"].value_counts()
+    if len(_qcnt):
+        note("📊 <b>處理優先序(體質 × 檔期象限)</b>:"
+             + " ｜ ".join(f"{k} {v} 間" for k, v in _qcnt.items())
+             + "。清單已依此排序,🚨 真警報(體質差且檔期空)排最前。")
     if gap_on:
         _only_gap = int((scope["_gap_hit"] & ~scope["_risk_hit"]).sum())
         if _only_gap:
@@ -299,6 +308,9 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
                 f"<span style='background:{r_badge[1]};color:#fff;border-radius:10px;"
                 f"padding:1px 9px;font-size:.68rem;font-weight:700;margin-left:5px;'>"
                 f"{r_badge[0]}</span>"
+                f"<span style='background:{P[QD.QUADRANTS[h['quadrant']]['color']]};"
+                f"color:#fff;border-radius:10px;padding:1px 9px;font-size:.68rem;"
+                f"font-weight:700;margin-left:5px;'>{h['quadrant_label']}</span>"
                 f"<span style='color:{P['muted']};font-size:.74rem;margin-left:8px;'>"
                 f"{h['neighbourhood_cleansed']}·空屋率 {h['vac_pred']:.0%}{gap_txt}"
                 f"{'·📨 已寄' if sent else ''}{'·✅ 已處理' if done else ''}"

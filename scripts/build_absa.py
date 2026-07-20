@@ -64,6 +64,10 @@ ASPECTS = {
                  "kitchen", "fridge", "washer", "microwave", "equipment"],
     "入住流程": ["入住", "check in", "checkin", "check-in", "鑰匙", "密碼",
                  "退房", "key", "keypad", "self check", "checkout"],
+    "早餐餐飲": ["早餐", "餐點", "咖啡", "食物", "美食", "breakfast", "coffee",
+                 "meal", "food", "snack", "restaurant nearby"],
+    "停車": ["停車", "車位", "機車", "parking", "car park", "garage",
+             "scooter"],
 }
 
 POS_WORDS = ["乾淨", "整潔", "舒適", "方便", "安靜", "親切", "推薦", "很棒",
