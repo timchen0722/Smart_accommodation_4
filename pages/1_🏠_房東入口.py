@@ -533,15 +533,32 @@ with TB3:
             radius_m=float(radius), exclude_listing_id=int(bid))
         _my_pp = float(B["price"]) / max(float(B["accommodates"]), 1)
         _pc = st.columns(5)
-        _pc[0].metric("我的每人每晚", f"${_my_pp:,.0f}",
-                      f"每晚 ${float(B['price']):,.0f}", delta_color="off")
+        with _pc[0]:
+            # 指標 + hover 摘要 + 查看詳情,收在同一個區塊內
+            with st.container(border=True):
+                st.metric("我的每人每晚", f"${_my_pp:,.0f}",
+                          f"每晚 ${float(B['price']):,.0f}", delta_color="off")
+                from modules import listing_detail as LD
+                _BD = DF_RAW[DF_RAW["id"] == int(bid)]
+                if len(_BD):
+                    _BD = _BD.iloc[0]
+                    # 滑鼠停留顯示摘要;完整內容(與租客入口同一個彈窗)由按鈕開啟
+                    st.markdown(LD.HOVER_CSS + LD.hover_card_html(
+                        _BD, extra_lines=[
+                            f"📊 每人每晚 <b>${_my_pp:,.0f}</b>"
+                            f"(可住 {int(float(B['accommodates']))} 人)"]),
+                        unsafe_allow_html=True)
+                    if st.button("🔍 查看詳情", key=f"detail_price_{bid}",
+                                 width="stretch"):
+                        LD.open_detail(_BD)
         for _i, _pl in enumerate(["Airbnb", "Booking", "591", "ddroom"], start=1):
             _v = _cs0["platforms"].get(_pl)
-            _pc[_i].metric(
-                {"ddroom": "租租網"}.get(_pl, _pl),
-                f"{_v['count']} 筆" if _v else "0 筆",
-                f"中位 ${_v['pp_median']:,.0f}" if _v else None,
-                delta_color="off")
+            with _pc[_i]:
+                with st.container(border=True):
+                    st.metric({"ddroom": "租租網"}.get(_pl, _pl),
+                              f"{_v['count']} 筆" if _v else "0 筆",
+                              f"中位 ${_v['pp_median']:,.0f}" if _v else None,
+                              delta_color="off")
         _pp0 = _cs0.get("pp_percentile")
         if _pp0 is not None:
             _pcol = (P["high"] if _pp0 >= .6 else
