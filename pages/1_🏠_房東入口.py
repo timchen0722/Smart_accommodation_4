@@ -624,35 +624,39 @@ with TB3:
         if len(NB) else 1
     c4.metric("同商圈排名(低風險優先)", f"第 {_rank} / {len(NB)} 名")
 
+    sec("周邊房源分佈圖")
+    mb("點位顏色 = 預測空屋率(綠 <40%・黃 40–69%・紅 ≥70%)· "
+       "虛線圓為比對半徑 · 閃爍點為本房源 · 滑過任一點會同步標示右側列表")
+    from modules.geo_utils import nearest_address as _addr_fn
+    from modules import map_view as MV
+    try:
+        _xc = comp_index().query(_blat, _blon, radius_m=float(radius))
+        _xc = _xc[_xc["platform"] != "Airbnb"].copy()
+    except FileNotFoundError:
+        _xc = pd.DataFrame(columns=["platform", "lat", "lon", "title",
+                                    "price_raw", "price_pp_day", "dist_m",
+                                    "capacity", "price_unit"])
+        st.caption("競品索引未建置,僅顯示 Airbnb 房源。")
+    MV.render(own=B, nearby=NB_o.head(180), comp=_xc,
+              radius_m=radius, addr_fn=_addr_fn, height=520)
+    st.caption("跨平台圖層可於地圖右上角分別勾選;點擊列表項目會將地圖移至該房源。")
+
+    st.divider()
     _mcol, _rcol = st.columns([1.5, 1], gap="medium")
     with _mcol:
-        sec("風險地圖熱力圖(顏色 = 預測空屋率)")
-        _show_x = st.checkbox("疊加跨平台競品點位(Booking/591/ddroom)", value=False)
-        _figH = px.density_mapbox(
-            NB, lat="latitude", lon="longitude", z="vac_pred",
-            radius=26, zoom=13.8, height=470,
+        sec("同商圈風險分佈")
+        _figS = px.scatter(
+            NB.assign(空屋率=(NB["vac_pred"] * 100).round(0)),
+            x="price", y="vac_pred", color="vac_pred", size="accommodates",
             color_continuous_scale=["#5B9E73", "#F7D774", "#C4645A"],
-            hover_data={"id": True, "vac_pred": ":.0%", "price": ":,.0f"})
-        _figH.add_trace(go.Scattermapbox(
-            lat=[_blat], lon=[_blon], mode="markers",
-            marker=dict(size=17, color="#2A2A2A"),
-            name="我的房源", hovertext=[f"#{bid}"]))
-        if _show_x:
-            try:
-                _xc = comp_index().query(_blat, _blon, radius_m=float(radius))
-                _xc = _xc[_xc["platform"] != "Airbnb"]
-                for _pl, _g in _xc.groupby("platform"):
-                    _figH.add_trace(go.Scattermapbox(
-                        lat=_g["lat"], lon=_g["lon"], mode="markers",
-                        marker=dict(size=8, color=_PLAT_COLORS[_pl]),
-                        name=_pl,
-                        hovertext=_g["title"].astype(str).str.slice(0, 26)))
-            except FileNotFoundError:
-                st.caption("競品索引未建置。")
-        _figH.update_layout(mapbox_style="carto-positron",
-                            margin=dict(l=0, r=0, t=0, b=0),
-                            coloraxis_colorbar=dict(title="空屋率"))
-        st.plotly_chart(_figH, use_container_width=True)
+            labels={"price": "每晚價格 (NT$)", "vac_pred": "預測空屋率",
+                    "accommodates": "可住人數"},
+            hover_data={"id": True, "空屋率": True, "price": ":,.0f"})
+        _figS.add_vline(x=float(B["price"]), line_dash="dot",
+                        line_color="#2A2A2A", annotation_text="本房源定價")
+        apply_theme(_figS, h=430).update_layout(
+            coloraxis_colorbar_title="空屋率")
+        st.plotly_chart(_figS, width="stretch")
     with _rcol:
         sec("同商圈排名表(依高風險機率,低者優先)")
         if len(NB):
