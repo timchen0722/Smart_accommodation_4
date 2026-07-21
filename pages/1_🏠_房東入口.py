@@ -550,7 +550,8 @@ with TB3:
                         unsafe_allow_html=True)
                     if st.button("🔍 查看詳情", key=f"detail_price_{bid}",
                                  width="stretch"):
-                        LD.open_detail(_BD)
+                        # 房東視角不需要「立即租房 / 加入收藏」(那是租客動作)
+                        LD.open_detail(_BD, show_actions=False)
         for _i, _pl in enumerate(["Airbnb", "Booking", "591", "ddroom"], start=1):
             _v = _cs0["platforms"].get(_pl)
             with _pc[_i]:
