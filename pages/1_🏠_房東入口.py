@@ -552,14 +552,24 @@ with TB3:
                                  width="stretch"):
                         # 房東視角不需要「立即租房 / 加入收藏」(那是租客動作)
                         LD.open_detail(_BD, show_actions=False)
+        # 四個平台卡:與「我的每人每晚」相同的互動(hover 摘要 + 查看詳情)
+        from modules import platform_detail as PD
+        _allc = _cs0.get("competitors")
         for _i, _pl in enumerate(["Airbnb", "Booking", "591", "ddroom"], start=1):
             _v = _cs0["platforms"].get(_pl)
+            _sub = (_allc[_allc["platform"] == _pl]
+                    if _allc is not None and len(_allc) else pd.DataFrame())
             with _pc[_i]:
                 with st.container(border=True):
-                    st.metric({"ddroom": "租租網"}.get(_pl, _pl),
+                    st.metric(PD.label(_pl),
                               f"{_v['count']} 筆" if _v else "0 筆",
                               f"中位 ${_v['pp_median']:,.0f}" if _v else None,
                               delta_color="off")
+                    st.markdown(PD.hover_card_html(_pl, _sub, radius, _my_pp),
+                                unsafe_allow_html=True)
+                    if st.button("🔍 查看詳情", key=f"pf_{_pl}_{bid}",
+                                 width="stretch"):
+                        PD.open_platform(_pl, _sub, radius, _my_pp)
         _pp0 = _cs0.get("pp_percentile")
         if _pp0 is not None:
             _pcol = (P["high"] if _pp0 >= .6 else
