@@ -204,8 +204,10 @@ def render_market_absa():
     mk = load_market_absa()
     city = mk[mk["scope"] == "全市"].sort_values("neg_ratio", ascending=False)
 
-    sec("全市評論面向總覽")
-    mb("資料:24 萬則評論 × 12 面向 · 面向詞典 + 局部情感窗口(非深度模型,可離線重現)")
+    sec("平台服務品質監管:全市評論面向分析")
+    mb("以 24 萬則住客評論的面向情感分析,監控平台整體服務品質;"
+       "負評率高且提及量大的面向,即為平台應優先要求改善的品質風險 · "
+       "面向詞典 + 局部情感窗口(非深度模型,可離線重現)")
     k = st.columns(4)
     k[0].metric("分析評論則數", f"{int(city['mentions'].sum()):,} 次提及")
     k[1].metric("最大痛點", city.iloc[0]["aspect"],
@@ -271,3 +273,10 @@ def render_market_absa():
                 f"「{str(r['text'])}」<span style='color:{P['muted']};font-size:.72rem;'>"
                 f" — 房源 #{int(r['listing_id'])}</span></div>",
                 unsafe_allow_html=True)
+
+    st.divider()
+    note("<b>平台監管建議</b>:對負評率位居前段的面向,建議平台"
+         "①針對該面向負評率前 10% 的房源發出品質改善要求並限期複查;"
+         "②於房源刊登頁強制揭露該面向的實際條件(如是否有獨立空調、隔音狀況),"
+         "降低期待落差;③將面向負評率納入排序權重,讓改善有實質誘因。"
+         "可至「🚨 風險管理」分頁交叉比對這些房源是否同時具備空屋風險。")
