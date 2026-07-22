@@ -111,3 +111,40 @@ def test_host_risk_summary_排序把整批惡化房東排最前(sample_df):
     h = pa.host_risk_summary(sample_df, commission=0.15)
     assert int(h.iloc[0]["host_id"]) == 30
     assert int(h.iloc[-1]["host_id"]) == 10
+
+
+def test_filter_scope_行政區與房型皆篩選(sample_df):
+    out = pa.filter_scope(sample_df, ["大安區"], ["Entire home/apt"])
+    assert len(out) == 2
+    assert set(out["id"]) == {1, 2}
+
+
+def test_filter_scope_None代表不篩選(sample_df):
+    assert len(pa.filter_scope(sample_df, None, None)) == 6
+    assert len(pa.filter_scope(sample_df, [], [])) == 6
+    assert len(pa.filter_scope(sample_df, ["信義區"], None)) == 3
+
+
+def test_supply_demand_matrix_門檻過濾(sample_df):
+    # 每個 行政區x房型 組合最多 2 間,門檻 15 應全部濾掉
+    out = pa.supply_demand_matrix(sample_df, min_listings=15)
+    assert len(out) == 0
+    assert list(out.columns) == ["行政區", "房型", "房源數", "平均空屋率",
+                                 "中位價格", "機會標籤"]
+
+
+def test_supply_demand_matrix_標籤分類():
+    # 兩組合:A 空屋率低且房源少 → 招募缺口;B 空屋率高且房源多 → 供給飽和
+    rows = []
+    rows += [{"id": i, "host_id": 1, "neighbourhood_cleansed": "A區",
+              "room_type": "Entire home/apt", "price": 1000.0,
+              "vac_pred": 0.1, "prob": 0.1, "tier": "green"}
+             for i in range(2)]
+    rows += [{"id": 100 + i, "host_id": 2, "neighbourhood_cleansed": "B區",
+              "room_type": "Private room", "price": 1000.0,
+              "vac_pred": 0.9, "prob": 0.9, "tier": "red"}
+             for i in range(8)]
+    d = pd.DataFrame(rows)
+    out = pa.supply_demand_matrix(d, min_listings=1).set_index("行政區")
+    assert out.loc["A區", "機會標籤"] == "🟢 招募缺口"
+    assert out.loc["B區", "機會標籤"] == "🔴 供給飽和"

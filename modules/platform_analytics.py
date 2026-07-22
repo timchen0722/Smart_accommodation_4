@@ -97,3 +97,40 @@ def host_risk_summary(df: pd.DataFrame, commission: float) -> pd.DataFrame:
     return (g[cols].sort_values(["高風險間數", "高風險占比"],
                                 ascending=[False, False])
             .reset_index(drop=True))
+
+
+def filter_scope(df: pd.DataFrame, districts=None, room_types=None) -> pd.DataFrame:
+    """全域篩選;None 或空 list 代表該維度不篩選。"""
+    out = df
+    if districts:
+        out = out[out["neighbourhood_cleansed"].isin(districts)]
+    if room_types:
+        out = out[out["room_type"].isin(room_types)]
+    return out
+
+
+def supply_demand_matrix(df: pd.DataFrame, min_listings: int = 15) -> pd.DataFrame:
+    """行政區 x 房型 供需矩陣:需求強(空屋率低)且供給薄(房源少)= 招募缺口。"""
+    cols = ["行政區", "房型", "房源數", "平均空屋率", "中位價格", "機會標籤"]
+    if len(df) == 0:
+        return pd.DataFrame(columns=cols)
+    d = df.copy()
+    d["_vac"] = _num(d["vac_pred"])
+    d["_price"] = _num(d["price"])
+    g = (d.groupby(["neighbourhood_cleansed", "room_type"])
+         .agg(房源數=("id", "size"),
+              平均空屋率=("_vac", "mean"),
+              中位價格=("_price", "median"))
+         .reset_index()
+         .rename(columns={"neighbourhood_cleansed": "行政區",
+                          "room_type": "房型"}))
+    g = g[g["房源數"] >= int(min_listings)]
+    if len(g) == 0:
+        return pd.DataFrame(columns=cols)
+    vac_mid = float(g["平均空屋率"].median())
+    n_mid = float(g["房源數"].median())
+    g["機會標籤"] = np.select(
+        [(g["平均空屋率"] < vac_mid) & (g["房源數"] < n_mid),
+         (g["平均空屋率"] > vac_mid) & (g["房源數"] > n_mid)],
+        ["🟢 招募缺口", "🔴 供給飽和"], default="⚪ 一般")
+    return g[cols].sort_values("平均空屋率").reset_index(drop=True)
