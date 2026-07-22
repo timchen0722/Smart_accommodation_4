@@ -119,6 +119,10 @@ def render_portfolio_tab():
     st.divider()
     render_tenure_strategy(d)
 
+    # ── 成長機會(平台方視角供需缺口)──
+    st.divider()
+    render_growth_opportunity()
+
 
 def render_tenure_strategy(d: pd.DataFrame):
     """長短租策略分析:依 calendar 的最低入住天數分群比較填充率與營收。"""
@@ -299,3 +303,68 @@ def render_forward_validation_tab():
          "雙層警報的黃色層仍抓到 63% 的真實高風險房源;但迴歸的連續空屋率預測"
          "不應被當作精確數值使用。平台現行設計(以分類機率決定等級、迴歸僅作輔助顯示)"
          "與此驗證結果一致。")
+
+
+# ════════════════════════════════════════════════════════════════
+# 區塊:成長機會(行政區 x 房型 供需缺口)
+# ════════════════════════════════════════════════════════════════
+def render_growth_opportunity():
+    """平台方視角:哪些 行政區 x 房型 組合該招募房源、哪些已飽和。"""
+    from modules import platform_analytics as pa
+    from modules.platform_sections import ROOM_ZH as _RZ
+    from modules.platform_sections import _money, commission, guard_scope
+
+    df = guard_scope()
+    if df is None:
+        return
+    cm = commission()
+
+    sec("成長機會:供需缺口矩陣")
+    mb("需求強(平均空屋率低於中位)且供給薄(房源數低於中位)= 建議招募房源的缺口市場;"
+       "反之為已飽和、不宜再增加供給的組合")
+
+    g = pa.supply_demand_matrix(df, min_listings=15)
+    if len(g) == 0:
+        st.info("篩選範圍內沒有房源數 ≥ 15 的『行政區 × 房型』組合,無法評估供需。")
+        return
+    g["房型中文"] = g["房型"].map(_RZ).fillna(g["房型"])
+
+    gap = g[g["機會標籤"] == "🟢 招募缺口"]
+    sat = g[g["機會標籤"] == "🔴 供給飽和"]
+    k = st.columns(3)
+    k[0].metric("可評估組合", f"{len(g):,} 組")
+    k[1].metric("🟢 招募缺口組合", f"{len(gap):,} 組")
+    k[2].metric("🔴 供給飽和組合", f"{len(sat):,} 組")
+
+    c1, c2 = st.columns([1.35, 1])
+    with c1:
+        fig = px.scatter(g, x="房源數", y="平均空屋率", color="機會標籤",
+                         size="中位價格", hover_name="行政區",
+                         hover_data={"房型中文": True, "中位價格": ":,.0f"},
+                         color_discrete_map={"🟢 招募缺口": P["low"],
+                                             "🔴 供給飽和": P["high"],
+                                             "⚪ 一般": P["muted"]},
+                         size_max=34)
+        fig.add_hline(y=g["平均空屋率"].median(), line_dash="dot",
+                      line_color=P["muted"], annotation_text="空屋率中位")
+        fig.add_vline(x=g["房源數"].median(), line_dash="dot",
+                      line_color=P["muted"], annotation_text="房源數中位")
+        apply_theme(fig, h=420).update_layout(
+            title="供給量 × 需求強度(左下＝需求強但供給薄,最值得招募)",
+            xaxis_title="該組合房源數(供給)",
+            yaxis_title="平均預估空屋率(越低代表需求越強)")
+        st.plotly_chart(fig, use_container_width=True)
+        note("<b>左下象限</b>= 空屋率低(訂得滿)但房源少 → 平台應優先招商;"
+             "<b>右上象限</b>= 房源多且空屋率高 → 供給已過剩,再增加房源會壓低整體表現。")
+    with c2:
+        top = gap.nsmallest(12, "平均空屋率") if len(gap) else g.nsmallest(12, "平均空屋率")
+        html_table(top.assign(
+            平均空屋率=top["平均空屋率"].map("{:.1%}".format),
+            中位價格=top["中位價格"].map("${:,.0f}".format))[
+            ["行政區", "房型中文", "房源數", "平均空屋率", "中位價格", "機會標籤"]
+        ].rename(columns={"房型中文": "房型"}), height=420)
+
+    _rev = (pa.add_revenue_columns(df, cm)["platform_revenue"].sum())
+    note(f"以目前抽成率 {cm:.0%} 估算,篩選範圍內平台年收入約 <b>{_money(_rev)}</b>;"
+         f"招募缺口組合若各增加 10 間房源、以該組合中位表現計,可帶來的增量收入"
+         f"應以此口徑另行試算。所有金額皆為<b>模型預估</b>,非實際金流。")
