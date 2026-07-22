@@ -147,7 +147,8 @@ def _gap_line(r: pd.Series) -> str:
 
 
 def _compose(r: pd.Series, prob: float, th: float, advice: list,
-             source: str, reason: str = "風險") -> dict:
+             source: str, reason: str = "風險",
+             platform_view: bool = False) -> dict:
     to = fake_host_email(r.get("host_name"), r.get("host_id", 0))
     tips = "\n".join(f"  {i}. {a}" for i, a in enumerate(advice, 1))
     gap = _gap_line(r)
@@ -157,16 +158,25 @@ def _compose(r: pd.Series, prob: float, th: float, advice: list,
              f"  ・預測未來一年空屋率 {float(r['vac_pred']):.0%}"]
     if gap:
         lines.append(gap)
-    body = (f"親愛的房東 {r.get('host_name') or ''} 您好,\n\n"
-            f"系統偵測到您的房源「{str(r['name'])[:40]}」{head}:\n"
-            + "\n".join(lines) + "\n\n"
+    if platform_view:
+        opening = (f"親愛的房東 {r.get('host_name') or ''} 您好,\n\n"
+                   f"我們是 Airbnb 平台營運團隊。平台的空屋風險模型偵測到"
+                   f"您的房源「{str(r['name'])[:40]}」{head},"
+                   f"為協助您提升出租表現,主動與您聯繫:\n")
+        closing = ("如需協助,歡迎回覆本信件由專人跟進。\n"
+                   "— Airbnb 平台營運團隊 · 智慧旅宿風險預警系統(模擬信件)")
+        subject = f"【Airbnb 平台營運團隊】{head} — 經營輔導與改善建議"
+    else:
+        opening = (f"親愛的房東 {r.get('host_name') or ''} 您好,\n\n"
+                   f"系統偵測到您的房源「{str(r['name'])[:40]}」{head}:\n")
+        closing = "— 智慧旅宿空屋率風險預警平台(模擬信件)"
+        subject = f"【智慧旅宿平台】{head}警示與改善建議"
+    body = (opening + "\n".join(lines) + "\n\n"
             f"為提升出租率,智慧建議如下({source}):\n{tips}\n\n"
             f"詳情請登入房東入口查看 LIME 原因分析、未來檔期空檔明細"
             f"與跨平台競品比較。\n"
-            f"— 智慧旅宿空屋率風險預警平台(模擬信件)")
-    return {"to": to,
-            "subject": f"【智慧旅宿平台】{head}警示與改善建議",
-            "body": body}
+            + closing)
+    return {"to": to, "subject": subject, "body": body}
 
 
 def _log(r, prob, th, status, source, mail=None):
@@ -180,7 +190,7 @@ def _log(r, prob, th, status, source, mail=None):
 
 
 def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
-                         key="nc"):
+                         key="nc", platform_view=False):
     """渲染通知中心。host_id=None 為全平台(後台);指定則僅該房東。"""
     df = _notify_df()
     sec("風險分級與通知(60% 通知模組)")
@@ -220,7 +230,7 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
         ["風險+空檔", "風險", "空檔"], default="")
     hits_all = df[risk_hit | gap_hit]
     scope = hits_all if host_id is None else hits_all[hits_all["host_id"] == host_id]
-    # 依「體質 × 檔期」象限排優先序:真警報 > 隱形危機 > 靠降價撐住 > 健康
+    # 依中央分類優先序排序；顯示名稱統一由 modules.quadrant 提供。
     from modules import quadrant as QD
     scope = QD.annotate(scope, tier_col=tier_col)
     scope = scope.sort_values(["quadrant_priority", prob_col, "gap_longest_30d"],
@@ -263,7 +273,8 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
                 try:
                     advice = _rule_advice(r)     # 批次自動寄送用規則引擎(快且穩)
                     mail = _compose(r, prob, th, advice, "規則引擎",
-                                    reason=r.get("_reason") or "風險")
+                                    reason=r.get("_reason") or "風險",
+                                    platform_view=platform_view)
                     _log(r, prob, th, "自動寄送成功(模擬)", "規則引擎", mail)
                     ok += 1
                 except Exception as e:           # 建議產生失敗 → 留待手動補寄
@@ -330,7 +341,8 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
                         src, advice = "規則引擎(LLM 失敗後備)", _rule_advice(h)
                         status = f"手動寄送成功(模擬,LLM 失敗:{type(e).__name__})"
                     mail = _compose(h, prob, th, advice, src,
-                                    reason=h.get("_reason") or "風險")
+                                    reason=h.get("_reason") or "風險",
+                                    platform_view=platform_view)
                     _log(h, prob, th, status, src, mail)
                     st.session_state["auto_sent"].add(hid)
                 st.toast(f"已模擬寄送至 {mail['to']}")
