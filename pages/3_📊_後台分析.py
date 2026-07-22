@@ -1,269 +1,109 @@
+# -*- coding: utf-8 -*-
+"""後台分析 — Airbnb 平台營運後台
+
+使用者角色:Airbnb 平台營運方(非房東)。五分頁對應四大工作情境 + 模型稽核:
+  🏙 市場總覽 / 🚨 風險管理 / 💰 營收與成長 / 💬 品質監管 / 🧪 模型監控
+設計依據:doc/07_平台後台改造設計.md
 """
-後台分析 — 空屋率風險預警與策略沙盒平台
-（依 smartaccommodation_imp_new 規格完全改寫；沿用平台原本暖色系）
-左欄：策略沙盒與經營控制   右欄：AI 診斷預警與 SHAP 貢獻
-"""
-import math
-import numpy as np
 import streamlit as st
 
-from modules.ui_components import inject_css, P, sidebar_nav, ROOM_JP
-from modules.vacancy_model import (
-    load_data, host_options, host_listings, get_row, predict,
-    contributions, diagnose, poi_snapshot, confidence, get_metrics, get_models,
-)
+from modules import platform_analytics as pa
+from modules.platform_sections import (render_market_overview,
+                                       render_risk_management)
+from modules.ui_components import ROOM_JP, inject_css, sidebar_nav
 
-st.set_page_config(page_title="後台分析 — 空屋率風險沙盒", page_icon="📊",
+st.set_page_config(page_title="後台分析 — Airbnb 平台營運後台", page_icon="📊",
                    layout="wide", initial_sidebar_state="expanded")
 inject_css()
-# 頂部留白，避免房源標題列與信心標籤被工具列切到
 st.markdown(
     "<style>.block-container,[data-testid='stMainBlockContainer']"
     "{padding-top:3.5rem !important;}</style>", unsafe_allow_html=True)
 
-RESP = {1: "一小時內 (極速)", 2: "幾小時內 (回覆迅速)",
-        3: "一天內 (普通)", 4: "多於一天 (偏慢)"}
+
+@st.cache_data(show_spinner=False)
+def _filter_options():
+    """側欄篩選選項(行政區、房型)。"""
+    from modules.feature_engineering import load_predictions
+    d = load_predictions()
+    if d is None:
+        return [], []
+    return (sorted(d["neighbourhood_cleansed"].dropna().unique().tolist()),
+            sorted(d["room_type"].dropna().unique().tolist()))
 
 
-def sf(v, d=0.0):
-    try:
-        v = float(v)
-        return d if math.isnan(v) else v
-    except Exception:
-        return d
+DISTRICTS, ROOMS = _filter_options()
 
-
-def band(vac):
-    if vac < 0.40:
-        return "低風險", P["low"]
-    if vac < 0.70:
-        return "中風險", P["medium"]
-    return "高風險", P["high"]
-
-
-def gauge_svg(vac, color):
-    """半圓風險儀表：弧長對應空屋率。"""
-    cx, cy, r = 130, 120, 96
-    theta = math.pi * (1 - max(0.0, min(1.0, vac)))     # 180° -> 0°
-    x = cx + r * math.cos(theta)
-    y = cy - r * math.sin(theta)
-    x0, y0 = cx - r, cy
-    pct = int(round(vac * 100))
-    return f"""
-<svg viewBox="0 0 260 150" width="100%" style="max-width:340px;display:block;margin:0 auto;">
-  <path d="M{x0},{y0} A{r},{r} 0 0 1 {cx+r},{cy}" fill="none"
-        stroke="{P['border']}" stroke-width="18" stroke-linecap="round"/>
-  <path d="M{x0},{y0} A{r},{r} 0 0 1 {x:.1f},{y:.1f}" fill="none"
-        stroke="{color}" stroke-width="18" stroke-linecap="round"/>
-  <text x="{cx}" y="{cy-14}" text-anchor="middle" font-size="40" font-weight="800"
-        fill="{color}">{pct}%</text>
-  <text x="{cx}" y="{cy+12}" text-anchor="middle" font-size="14"
-        fill="{P['muted']}">預估年空屋率</text>
-</svg>"""
-
-
-def waterfall_html(contribs):
-    if not contribs:
-        return "<div style='color:#9A9490;'>無足夠特徵可解釋。</div>"
-    mx = max(abs(d) for _, _, d in contribs) or 1.0
-    rows = []
-    for f, zh, d in contribs:
-        w = abs(d) / mx * 46          # 半邊最長 46%
-        if d >= 0:                    # 推高風險（紅、向右）
-            bar = (f"<div style='flex:1;'></div>"
-                   f"<div style='flex:1;position:relative;'>"
-                   f"<div style='position:absolute;left:0;height:16px;border-radius:0 6px 6px 0;"
-                   f"width:{w:.1f}%;background:{P['high']};'></div></div>")
-            val = f"<span style='color:{P['high']};font-weight:700;'>+{d:.2f}%</span>"
-        else:                         # 降低風險（綠、向左）
-            bar = (f"<div style='flex:1;position:relative;'>"
-                   f"<div style='position:absolute;right:0;height:16px;border-radius:6px 0 0 6px;"
-                   f"width:{w:.1f}%;background:{P['low']};'></div></div>"
-                   f"<div style='flex:1;'></div>")
-            val = f"<span style='color:{P['low']};font-weight:700;'>{d:.2f}%</span>"
-        rows.append(
-            f"<div style='display:flex;align-items:center;gap:8px;margin:5px 0;'>"
-            f"<div title='{zh}' style='width:120px;text-align:right;font-size:.8rem;color:{P['ink2']};"
-            f"white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>{zh}</div>"
-            f"<div style='flex:1;display:flex;border-left:2px dashed {P['border2']};'>{bar}</div>"
-            f"<div style='width:64px;text-align:left;font-size:.82rem;'>{val}</div></div>")
-    return ("<div style='background:" + P['surface'] + ";border:1px solid " + P['border'] +
-            ";border-radius:12px;padding:14px 16px;'>"
-            "<div style='text-align:center;font-weight:800;margin-bottom:8px;'>"
-            "各項經營與 POI 機能指標之空屋率加減分貢獻度</div>"
-            "<div style='text-align:center;font-size:.7rem;color:" + P['muted'] +
-            ";margin-bottom:8px;'>綠色（左）＝降低風險　紅色（右）＝推高風險</div>"
-            + "".join(rows) + "</div>")
-
-
-# ─── Sidebar：房東 / 房源選擇 ─────────────────────────────────
-DF = load_data()
 with st.sidebar:
     sidebar_nav()
-    st.markdown("#### 🎯 請選擇登入的房東")
-    hosts = host_options()
-    hlab = [f"房東 ID: {h} (名下 {n} 間房源)" for h, n in hosts]
-    hi = st.selectbox("host", range(len(hosts)),
-                      format_func=lambda i: hlab[i], label_visibility="collapsed")
-    host_id = hosts[hi][0]
-    lst_all = host_listings(host_id)
-    st.markdown("#### 🗺 區域")
-    _dists = sorted({r["neighbourhood_cleansed"] for r in lst_all})
-    dsel = st.selectbox("district", _dists, label_visibility="collapsed")
-    st.markdown("#### 🏠 切換操作房源")
-    lst = [r for r in lst_all if r["neighbourhood_cleansed"] == dsel]
-    llab = [f"房源 #{r['id']} ({ROOM_JP.get(r['room_type'], r['room_type'])})" for r in lst]
-    li = st.selectbox("listing", range(len(lst)),
-                      format_func=lambda i: llab[i], label_visibility="collapsed")
-    listing_id = int(lst[li]["id"])
+    st.markdown("#### 🏢 Airbnb 平台營運後台")
+    st.caption("全域篩選會套用到所有分頁")
+    st.multiselect("行政區", DISTRICTS, default=[], key="pf_districts",
+                   placeholder="不選＝全部行政區")
+    st.multiselect("房型", ROOMS, default=[], key="pf_rooms",
+                   format_func=lambda r: ROOM_JP.get(r, r),
+                   placeholder="不選＝全部房型")
     st.divider()
-    st.caption("技術堆疊：LightGBM 主力 + XGBoost 對照（Isotonic 校準）· "
-               "標籤 Y≥0.6 · 雙層警報（紅 0.60 / 黃 0.35）· "
-               "GroupKFold(host_id) 5 折誠實驗證 · 58 特徵多模態")
+    st.markdown("#### 💰 平台抽成率")
+    st.slider("抽成率", pa.COMMISSION_MIN, pa.COMMISSION_MAX,
+              pa.COMMISSION_DEFAULT, 0.01, format="%.0f%%",
+              key="pf_commission",
+              help="用於把房東端預估年營收換算為平台收入;調整後所有分頁金額即時連動")
+    st.divider()
+    st.caption("技術堆疊:LightGBM 主力 + XGBoost 對照(Isotonic 校準)· "
+               "標籤 Y≥0.6 · 雙層警報(紅 0.60 / 黃 0.35)· "
+               "GroupKFold(host_id) 5 折誠實驗證 · 59 特徵多模態")
 
-row = get_row(listing_id)
-conf, conf_why = confidence(row)
-conf_color = P["low"] if conf == "極高" else P["medium"]
-from modules.geo_utils import nearest_address as _naddr
-_addr = _naddr(sf(row["latitude"]), sf(row["longitude"]))
-
-# ─── 頂部資訊 + 信心標籤 ──────────────────────────────────────
 st.markdown(
-    f"<div style='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;'>"
-    f"<div><span style='font-size:1.5rem;font-weight:800;'>房源 #{listing_id}</span>"
-    f"<span style='color:{P['muted']};margin-left:12px;'>{ROOM_JP.get(row['room_type'], row['room_type'])}</span></div>"
-    f"<div style='background:{conf_color};color:#fff;padding:6px 16px;border-radius:20px;font-weight:800;'>"
-    f"預測信心：{conf}</div></div>"
-    f"<div style='color:{P['muted']};font-size:.86rem;margin:5px 0 0;'>"
-    f"📍 {row['neighbourhood_cleansed']}{('・' + _addr) if _addr else ''} ｜ "
-    f"🧭 {sf(row['latitude']):.4f}, {sf(row['longitude']):.4f}</div>"
-    f"<div style='color:{P['muted']};font-size:.8rem;margin:2px 0 10px;'>{conf_why}</div>",
-    unsafe_allow_html=True)
+    "<div style='font-size:1.6rem;font-weight:800;margin-bottom:2px;'>"
+    "📊 Airbnb 平台營運後台</div>"
+    "<div style='color:#9A9490;font-size:.86rem;margin-bottom:14px;'>"
+    "市場健康度監控 · 高風險房源與房東管理 · 平台營收與成長 · 服務品質監管"
+    "</div>", unsafe_allow_html=True)
 
-cL, cR = st.columns(2, gap="large")
+t_ov, t_risk, t_rev, t_qa, t_model = st.tabs(
+    ["🏙 市場總覽", "🚨 風險管理", "💰 營收與成長", "💬 品質監管", "🧪 模型監控"])
 
-# ─── 左欄：策略沙盒 ───────────────────────────────────────────
-with cL:
-    st.markdown(f"### 🎛 策略沙盒與經營控制")
-    st.markdown("🔒 **唯讀歷史數據 (不可調整)**")
-    a, b = st.columns(2)
-    a.text_input("所在行政區", row["neighbourhood_cleansed"], disabled=True)
-    b.text_input("歷史性價比評分", f"{sf(row['review_scores_value']):.1f} ★", disabled=True)
-    a.text_input("歷史清潔度評分", f"{sf(row['review_scores_cleanliness']):.1f} ★", disabled=True)
-    b.text_input("歷史溝通體驗評分", f"{sf(row['review_scores_communication']):.1f} ★", disabled=True)
+with t_ov:
+    render_market_overview()
 
-    ps = poi_snapshot(row)
-    st.markdown(
-        f"<div style='background:{P['mbg']};border:1px solid {P['border']};border-radius:12px;"
-        f"padding:12px 14px;margin:10px 0;font-size:.84rem;line-height:1.9;color:{P['ink2']};'>"
-        f"💡 <b>周邊機能快照 (唯讀)</b><br>"
-        f"・最近捷運站：{ps['mrt_name']}（{ps['mrt_m']:.0f} 公尺，500m 內有 {ps['mrt_500']:.0f} 個出入口）<br>"
-        f"・生活機能：500m 內有超商 {ps['conv_500']:.0f} 家、餐廳 {ps['rest_500']:.0f} 家<br>"
-        f"・綠地景觀：最近公園 {ps['park_name']}（{ps['park_m']:.0f} 公尺，500m 內 {ps['park_500']:.0f} 座）<br>"
-        f"・住客評價情感得分：{ps['sentiment']:.2f}（歷史平均評論字數 {ps['rev_len']:.0f} 字）</div>",
-        unsafe_allow_html=True)
+with t_risk:
+    render_risk_management()
 
-    st.markdown("⚡ **動態參數調整 (即時模擬)**")
-    price = st.slider("每晚房價 (NTD $)", 500, 50000,
-                      int(min(50000, max(500, sf(row["price"], 1500)))), step=50)
-    mn = st.number_input("最低入住天數限制 (晚)", 1, 30,
-                         int(min(30, max(1, sf(row["minimum_nights"], 1)))))
-    rs_now = int(min(4, max(1, sf(row["response_speed"], 2))))
-    rs = st.selectbox("客服平均回覆時間", [1, 2, 3, 4],
-                      index=rs_now - 1, format_func=lambda k: RESP[k])
-    desc = st.text_area(
-        "房源描述文案模擬區",
-        value=f"【目前自介字數約 {int(sf(row['desc_len']))} 字】。"
-              "調整此文字以模擬房源描述篇幅與用心程度，可在此處輸入新文案…",
-        height=110)
-    desc_len = len(desc)
-
-overrides = {"price": price, "minimum_nights": mn,
-             "response_speed": rs, "desc_len": desc_len}
-
-# ─── 右欄：AI 診斷預警 ────────────────────────────────────────
-with cR:
-    st.markdown("### 🩺 AI 診斷預警與指標評估")
-    vac, risk = predict(row, overrides)
-    lbl, color = band(vac)
-    st.markdown(gauge_svg(vac, color), unsafe_allow_html=True)
-    breathing = "animation:pulse 1.2s ease-in-out infinite;" if vac >= 0.70 else ""
-    st.markdown(
-        f"<style>@keyframes pulse{{50%{{opacity:.45;}}}}</style>"
-        f"<div style='text-align:center;margin:-6px 0 6px;{breathing}'>"
-        f"<span style='font-size:1.5rem;font-weight:800;color:{color};'>{lbl}"
-        f"{'（空屋警報）' if vac>=0.7 else ''}</span></div>"
-        f"<div style='text-align:center;color:{P['muted']};font-size:.9rem;margin-bottom:6px;'>"
-        f"P(空屋率 ≥ 60%)（模型 B 校準機率）：{risk*100:.1f}%</div>",
-        unsafe_allow_html=True)
-    _M0 = get_models()
-    _red0, _yel0 = _M0.get("red_th", .6), _M0.get("yellow_th", .35)
-    _tier0 = ("red" if risk >= _red0 else
-              ("yellow" if risk >= _yel0 else "green"))
-    _tier_disp = {"red": (P["high"], "🔴 紅色警報（此層精確率約 70%）"),
-                  "yellow": (P["medium"], "🟡 黃色觀察名單（觀察層召回率約 70%）"),
-                  "green": (P["low"], "🟢 綠色安全")}[_tier0]
-    st.markdown(
-        f"<div style='text-align:center;margin-bottom:12px;'>"
-        f"<span style='background:{_tier_disp[0]};color:#fff;padding:4px 16px;"
-        f"border-radius:20px;font-weight:800;font-size:.85rem;'>{_tier_disp[1]}</span>"
-        f"</div>", unsafe_allow_html=True)
-
-    tips = diagnose(row, overrides, k=2)
-    tip_html = ""
-    for t in tips:
-        tip_html += (
-            f"<div style='border-left:3px solid {P['low']};background:{P['tag_bg']};"
-            f"border-radius:0 8px 8px 0;padding:10px 12px;margin:8px 0;font-size:.86rem;line-height:1.7;'>"
-            f"💡 <b>{t['zh']}</b>（+{t['delta']:.2f}% 空屋風險）<br>{t['advice']}</div>")
-    if not tip_html:
-        tip_html = f"<div style='color:{P['low']};'>目前無明顯扣分項，經營狀態良好。</div>"
-    st.markdown(
-        f"<div style='background:{P['surface']};border:1px solid {P['border']};border-radius:12px;"
-        f"padding:14px 16px;margin-bottom:12px;'>"
-        f"<div style='font-weight:800;margin-bottom:4px;'>🤖 AI 房源智能診斷報告</div>"
-        f"<div style='color:{P['muted']};font-size:.78rem;margin-bottom:6px;'>"
-        f"🚨 篩選出推高空屋風險最多的 Top-2 因子並給出優化建議</div>{tip_html}</div>",
-        unsafe_allow_html=True)
-
-    st.markdown(waterfall_html(contributions(row, overrides, top=8)),
-                unsafe_allow_html=True)
-
-# ─── 底部：誠實模型品質 ──────────────────────────────────────
-with st.expander("📐 模型品質（GroupKFold(host_id) 5 折誠實驗證）"):
-    m = get_metrics()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("模型 A R²", f"{m['R2']:.3f}")
-    c2.metric("模型 A MSE", f"{m['MSE']:.4f}")
-    c3.metric("模型 B AUC", f"{m['AUC']:.3f}")
-    c4.metric("模型 B Recall", f"{m['Recall']:.3f}")
-    st.caption(
-        f"樣本 {m['n']} 筆 · {m['n_features']} 特徵 · "
-        f"標籤 {m.get('label_def', 'Y >= 0.6')} · "
-        f"高風險占比 {m['high_risk_rate']*100:.1f}%。"
-        "此為測試房東不出現在訓練集的誠實泛化指標（比隨機切分保守、但可信）。")
-
-# ─── 研究級分頁：模型與誠實評估 / SHAP 可解釋性（v4 雙模型）─────
-st.divider()
-# 主打在前:市場獲利與口碑;模型與可解釋性退居後排作為方法佐證
-_tab_pf, _tab_absa, _tab_nc, _tab_model, _tab_fwd, _tab_shap = st.tabs(
-    ["市場獲利地圖", "評論面向分析", "通知中心（全平台）",
-     "模型評估（LightGBM vs XGBoost）", "前瞻驗證（真實未來）",
-     "SHAP 可解釋性"])
-from modules.backend_v2_sections import render_model_tab_v2, render_shap_tab_v2
-from modules.portfolio_sections import (render_portfolio_tab,
-                                        render_forward_validation_tab)
-from modules.notify_center import render_notify_center
-with _tab_model:
-    render_model_tab_v2()
-with _tab_shap:
-    render_shap_tab_v2()
-with _tab_fwd:
-    render_forward_validation_tab()
-with _tab_pf:
+with t_rev:
+    from modules.portfolio_sections import render_portfolio_tab
     render_portfolio_tab()
-with _tab_absa:
+
+with t_qa:
     from modules.absa_sections import render_market_absa
     render_market_absa()
-with _tab_nc:
-    render_notify_center(host_id=None, key="admin_nc")
+
+with t_model:
+    from modules.backend_v2_sections import (render_model_tab_v2,
+                                             render_shap_tab_v2)
+    from modules.portfolio_sections import render_forward_validation_tab
+    from modules.ui_components import mb, note, sec
+    from modules.vacancy_model import get_metrics
+
+    sec("模型稽核:平台方如何確認 AI 風險評分可信")
+    mb("本頁供平台方稽核風險評分的可信度;所有指標皆為 "
+       "<b>GroupKFold(host_id) 5 折誠實驗證</b>(測試房東不出現在訓練集)")
+    _m = get_metrics()
+    _k = st.columns(4)
+    _k[0].metric("分類 AUC", f"{_m['AUC']:.3f}")
+    _k[1].metric("🔴 紅層 Precision", "0.69", "門檻 0.60", delta_color="off")
+    _k[2].metric("🟡 黃層以上 Recall", "0.70", "門檻 0.35", delta_color="off")
+    _k[3].metric("迴歸 R²", f"{_m['R2']:.3f}")
+    note("解讀:<b>紅色警報</b>精確率約 69% —— 平台派專人輔導時,約七成是真的高風險,"
+         "介入成本可控;<b>黃色觀察層</b>召回率約 70% —— 適合用於批次自動通知,"
+         "能覆蓋多數高風險房源。迴歸 R² 偏低是空屋率本質難以精確外推,"
+         "故平台決策一律以<b>分類分層</b>為準,連續空屋率僅作輔助顯示。")
+    st.divider()
+
+    m1, m2, m3 = st.tabs(["模型評估(LightGBM vs XGBoost)",
+                          "前瞻驗證(真實未來)", "SHAP 可解釋性"])
+    with m1:
+        render_model_tab_v2()
+    with m2:
+        render_forward_validation_tab()
+    with m3:
+        render_shap_tab_v2()
