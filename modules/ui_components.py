@@ -77,9 +77,128 @@ def inject_css():
       border-bottom:2px solid {P['border']};gap:0;padding:0;}}
     .stTabs [data-baseweb="tab"]{{color:{P['muted']};border-radius:0;
       padding:9px 20px;border-bottom:2px solid transparent;margin-bottom:-2px;
-      font-size:.85rem;font-weight:500;transition:all .2s ease;}}
+      font-size:1.05rem;font-weight:700;letter-spacing:.01em;white-space:nowrap;
+      transition:all .2s ease;}}
     .stTabs [aria-selected="true"]{{color:{P['primary']} !important;
       border-bottom:2px solid {P['primary']} !important;background:transparent !important;}}
+    .overview-metric{{
+      height:108px;box-sizing:border-box;display:flex;flex-direction:column;
+      justify-content:center;background:{P['surface']};border:1px solid {P['border']};
+      border-radius:12px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,.03);
+    }}
+    .overview-metric-label{{
+      color:{P['muted']};font-size:.76rem;font-weight:500;letter-spacing:.08em;
+      margin-bottom:5px;
+    }}
+    .overview-metric-value{{
+      color:{P['ink']};font-size:1.38rem;font-weight:700;line-height:1.25;
+    }}
+    .listing-card-accent{{height:4px;border-radius:4px;margin-bottom:11px;}}
+    .listing-card-id{{
+      color:{P['muted']};font-size:.7rem;font-weight:600;letter-spacing:.04em;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;
+    }}
+    .listing-card-title{{
+      height:47px;color:{P['ink']};font-size:1.03rem;font-weight:700;line-height:1.42;
+      margin:0 0 13px;overflow:hidden;text-overflow:ellipsis;
+      display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    }}
+    .listing-card-photo{{
+      width:100%;height:190px;display:block;object-fit:cover;
+      background:{P['tag_bg']};border-radius:9px;border:1px solid {P['border']};
+    }}
+    .listing-card-photo-empty{{
+      width:100%;height:190px;display:flex;align-items:center;justify-content:center;
+      background:{P['tag_bg']};border:1px dashed {P['border2']};border-radius:9px;
+      color:{P['muted']};font-size:.76rem;
+    }}
+    .listing-card-meta{{
+      display:grid;gap:3px;margin-top:10px;color:{P['ink2']};
+      font-size:.79rem;line-height:1.45;
+    }}
+    .listing-card-meta-row{{
+      display:flex;align-items:center;gap:8px;min-width:0;height:22px;
+    }}
+    .listing-card-meta-key{{
+      flex:0 0 56px;color:{P['muted']};font-size:.72rem;font-weight:700;
+    }}
+    .listing-card-meta-value{{
+      min-width:0;color:{P['ink2']};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    }}
+    .listing-card-price{{color:{P['tenant']};font-weight:800;font-variant-numeric:tabular-nums;}}
+    .listing-card-risk{{
+      height:290px;box-sizing:border-box;min-width:0;display:flex;flex-direction:column;
+      align-items:center;justify-content:flex-start;padding:16px 13px;
+      background:{P['card']};border:1px solid {P['border']};border-radius:10px;text-align:center;
+    }}
+    .listing-card-risk-label{{
+      color:{P['muted']};font-size:.73rem;font-weight:700;letter-spacing:.06em;
+    }}
+    .listing-card-ring{{height:113px;display:flex;align-items:center;justify-content:center;}}
+    .listing-card-comparison{{
+      width:100%;min-height:54px;box-sizing:border-box;display:flex;align-items:center;
+      justify-content:center;padding:7px 10px;border-radius:8px;
+      font-size:.76rem;font-weight:700;line-height:1.5;
+    }}
+    .listing-card-comparison-high{{background:#FEF2F0;color:#A03028;}}
+    .listing-card-comparison-low{{background:#EAF5EE;color:#3D7A55;}}
+    .listing-card-comparison-flat{{background:{P['tag_bg']};color:{P['ink2']};}}
+    .listing-card-calendar{{
+      width:100%;margin-top:9px;padding-top:8px;border-top:1px solid {P['border']};
+      color:{P['muted']};font-size:.72rem;line-height:1.4;
+    }}
+    .listing-card-calendar strong{{
+      display:block;margin-top:2px;color:{P['ink']};font-size:1rem;
+      font-variant-numeric:tabular-nums;
+    }}
+    @media(max-width:760px){{
+      .listing-card-photo,.listing-card-photo-empty{{height:210px;}}
+      .listing-card-meta{{font-size:.8rem;}}
+    }}
+    .quadrant-table-wrap{{
+      overflow-x:auto;margin-top:8px;background:{P['surface']};
+      border:1px solid {P['border']};border-radius:14px;
+      box-shadow:0 4px 18px rgba(42,42,42,.055);
+    }}
+    .quadrant-table{{
+      width:100%;min-width:880px;border-collapse:separate;border-spacing:0;
+      table-layout:fixed;
+    }}
+    .quadrant-table th{{
+      background:{P['mbg']};color:{P['mtxt']};padding:12px 18px;
+      border-bottom:1px solid #C8DCF0;font-size:.79rem;font-weight:700;
+      letter-spacing:.06em;text-align:left;
+    }}
+    .quadrant-table td{{
+      background:{P['surface']};color:{P['ink2']};padding:15px 18px;
+      border-bottom:1px solid {P['border']};font-size:.95rem;
+      line-height:1.65;vertical-align:middle;
+    }}
+    .quadrant-table tbody tr:last-child td{{border-bottom:0;}}
+    .quadrant-table tbody tr td:first-child{{
+      border-left:4px solid var(--quadrant-color);
+    }}
+    .quadrant-table tbody tr:hover td{{background:#FAFCFE;}}
+    .quadrant-status{{
+      display:inline-flex;align-items:center;gap:9px;white-space:nowrap;
+      color:var(--quadrant-color);font-size:.92rem;font-weight:700;
+    }}
+    .quadrant-status-dot{{
+      width:10px;height:10px;flex:0 0 10px;border-radius:50%;
+      background:var(--quadrant-color);
+      box-shadow:0 0 0 4px color-mix(in srgb,var(--quadrant-color) 14%,white);
+    }}
+    .quadrant-count{{
+      color:{P['ink']};font-size:1.25rem;font-weight:800;
+      font-variant-numeric:tabular-nums;
+    }}
+    .quadrant-count-unit{{
+      margin-left:4px;color:{P['muted']};font-size:.82rem;font-weight:600;
+    }}
+    .quadrant-action{{color:{P['ink']};font-weight:500;}}
+    .quadrant-action::before{{
+      content:'→';margin-right:8px;color:var(--quadrant-color);font-weight:800;
+    }}
     section[data-testid="stSidebar"] label{{color:{P['ink2']} !important;font-size:.80rem;}}
     .sec{{font-size:.71rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
       color:{P['muted']};margin:18px 0 3px;padding-bottom:7px;

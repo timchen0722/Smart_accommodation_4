@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """房東入口 — 房東營運面板
 
-分頁順序即使用順序,四項主打在前、模型診斷在後:
+分頁順序即使用順序,核心營運功能在前、模型診斷在後:
   房源總表   多房源優先序(體質 × 檔期四象限)· 空檔天數與機會成本
-  定價情報   1km 內四平台每人每晚落點 · 同商圈同房型真實已訂率基準 · 周邊地圖
-  口碑情報   評論 14 面向負評率 vs 同區基準 · 優先改善清單
+  房源定價情報   1km 內四平台每人每晚落點 · 同商圈同房型真實已訂率基準 · 周邊地圖
   未來檔期   逐日訂房熱度 · 月度 vs 同商圈 · 空檔警示 · 營收最適定價
   風險診斷   模型分數 · LIME 原因 · What-if(前瞻 AUC 0.632,僅供輔助)
-  通知中心   風險或空檔觸發 · 自動/手動寄送 · 已處理狀態
   月報       彙整以上為可下載報告
 """
+import html as _html
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -111,15 +111,13 @@ st.markdown(f"""
 <div style="padding:6px 0 10px;">
   <h1 style="font-size:1.4rem;font-weight:700;color:{P['ink']};margin:0;">
   房東營運面板</h1>
-  <p style="font-size:.78rem;color:{P['muted']};margin:4px 0 0;">
-  多房源優先序 · 跨平台定價落點 · 評論面向拆解 · 真實檔期基準</p>
 </div><hr style="margin:0 0 12px;">""", unsafe_allow_html=True)
 
-# 分頁順序 = 使用順序:先看該處理哪間,再看定價、口碑、檔期;
+# 分頁順序 = 使用順序:先看該處理哪間,再看定價、檔期;
 # 模型與 LIME 診斷退居後排(前瞻驗證 AUC 0.632,僅作輔助排序)。
-TB1, TB2P, TB2R, TB5, TB2, TB4, TB6 = st.tabs(
-    ["房源總表", "定價情報", "口碑情報", "未來檔期",
-     "風險診斷", "通知中心", "月報"])
+TB1, TB2P, TB5, TB2, TB6 = st.tabs(
+    ["🗂️ 房源總表", "💰 房源定價情報", "🗓️ 未來檔期",
+     "⚠️ 風險診斷", "🧾 月報"])
 TB3 = TB2P          # 「周邊比較」內容併入定價情報分頁
 
 
@@ -138,13 +136,55 @@ def risk_ring(vac, color, size=92):
 
 
 def trend_arrow(row):
-    """趨勢箭頭:與同商圈(行政區)中位風險相比(↑高於商圈=紅,↓低於=綠)。"""
-    d = float(row["vac_pred"]) - float(row["dist_med"])
+    """顯示預估空房率與所屬行政區中位數的差距。"""
+    district = _html.escape(str(row.get("neighbourhood_cleansed") or "所屬行政區"))
+    try:
+        d = float(row["vac_pred"]) - float(row["dist_med"])
+    except (TypeError, ValueError):
+        d = np.nan
+    if not np.isfinite(d):
+        return ("<span class='listing-card-comparison listing-card-comparison-flat'>"
+                "暫無行政區空房率基準</span>")
     if d > 0.02:
-        return f"<span style='color:{P['high']};font-weight:800;'>▲ 高於商圈 {d*100:.0f}pp</span>"
+        return ("<span class='listing-card-comparison listing-card-comparison-high'>"
+                f"高於{district}中位數空房率 {d*100:.0f}pp</span>")
     if d < -0.02:
-        return f"<span style='color:{P['low']};font-weight:800;'>▼ 低於商圈 {abs(d)*100:.0f}pp</span>"
-    return f"<span style='color:{P['muted']};font-weight:700;'>◆ 與商圈持平</span>"
+        return ("<span class='listing-card-comparison listing-card-comparison-low'>"
+                f"低於{district}中位數空房率 {abs(d)*100:.0f}pp</span>")
+    return ("<span class='listing-card-comparison listing-card-comparison-flat'>"
+            f"與{district}中位數空房率持平</span>")
+
+
+def quadrant_summary_table(summary_df):
+    """以狀態色、清楚欄寬與大字級呈現象限決策摘要。"""
+    rows = []
+    for quadrant, meta in sorted(
+            QD.QUADRANTS.items(), key=lambda item: item[1]["priority"]):
+        matched = summary_df[summary_df["象限"] == meta["label"]]
+        if matched.empty:
+            continue
+        row = matched.iloc[0]
+        status = meta["label"].split(" ", 1)[-1]
+        color = P[meta["color"]]
+        rows.append(f"""
+        <tr style="--quadrant-color:{color};">
+          <td><span class="quadrant-status"><span class="quadrant-status-dot"
+              aria-hidden="true"></span>{_html.escape(status)}</span></td>
+          <td><span class="quadrant-count">{int(row['房源數'])}</span>
+              <span class="quadrant-count-unit">間</span></td>
+          <td>{_html.escape(str(row['說明']))}</td>
+          <td><span class="quadrant-action">{_html.escape(str(row['建議行動']))}</span></td>
+        </tr>""")
+    st.markdown(f"""
+    <div class="quadrant-table-wrap">
+      <table class="quadrant-table" aria-label="房源營運象限摘要">
+        <colgroup><col style="width:17%"><col style="width:10%">
+          <col style="width:36%"><col style="width:37%"></colgroup>
+        <thead><tr><th scope="col">營運狀態</th><th scope="col">房源數</th>
+          <th scope="col">狀況判讀</th><th scope="col">建議行動</th></tr></thead>
+        <tbody>{''.join(rows)}</tbody>
+      </table>
+    </div>""", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -152,68 +192,95 @@ def trend_arrow(row):
 # ══════════════════════════════════════════════════════════════
 with TB1:
     _gapd = MY["gap_days_30d"].fillna(0)
-    _gapv = (MY["price"].fillna(0) * _gapd).sum()
     _alarm = int((MY["quadrant"] == "alarm").sum())
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("名下房源", f"{len(MY)} 間")
-    k2.metric("近 30 天訂房率",
-              "—" if MY["booked_rate_d30"].isna().all()
-              else f"{MY['booked_rate_d30'].mean()*100:.0f}%",
-              "真實日曆", delta_color="off")
-    k3.metric("30 天空檔", f"{int(_gapd.sum())} 天",
-              f"約 NT$ {_gapv:,.0f}", delta_color="off")
-    k4.metric("需優先處理", f"{_alarm} 間", "檔期空且體質偏弱", delta_color="off")
-    k5.metric("平均預測空屋率", f"{MY['vac_pred'].mean()*100:.0f}%",
-              "模型推估·僅供參考", delta_color="off")
-    # ── 體質 × 檔期 四象限 ──
-    sec("體質(模型)× 檔期(真實已訂率)四象限")
-    mb("模型 AUC 0.632 為體質推估;calendar 已訂率為 100% 真實觀測 · "
-       "兩者衝突時以檔期為準(近期行動看檔期,長期投資看模型)")
+    _overview = [
+        ("名下房源", f"{len(MY)} 間"),
+        ("近 30 天訂房率", "—" if MY["booked_rate_d30"].isna().all()
+         else f"{MY['booked_rate_d30'].mean()*100:.0f}%"),
+        ("30 天空檔", f"{int(_gapd.sum())} 天"),
+        ("需優先處理", f"{_alarm} 間"),
+        ("平均預測空屋率", f"{MY['vac_pred'].mean()*100:.0f}%"),
+    ]
+    for _col, (_label, _value) in zip((k1, k2, k3, k4, k5), _overview):
+        _col.markdown(
+            f'<div class="overview-metric"><div class="overview-metric-label">'
+            f'{_label}</div><div class="overview-metric-value">{_value}</div></div>',
+            unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="margin:20px 0 8px;font-size:1.15rem;font-weight:700;
+         color:{P['ink']};letter-spacing:.01em;">
+      模型預估與90實際訂房分析
+    </div>""", unsafe_allow_html=True)
     _qs = QD.summary(MY)
-    _qcols = st.columns(len(_qs) if len(_qs) else 1)
-    for _col, (_, _qr) in zip(_qcols, _qs.iterrows()):
-        _col.metric(_qr["象限"], f"{_qr['房源數']} 間")
-    html_table(_qs, wrap=True, scroll=False)
+    quadrant_summary_table(_qs)
 
     _qopts = ["全部"] + _qs["象限"].tolist()
     _qpick = st.radio("篩選象限", _qopts, horizontal=True, key="q_filter")
     _cards = MY.copy()
     if _qpick != "全部":
         _cards = _cards[_cards["quadrant_label"] == _qpick]
-    sec(f"房源卡片({len(_cards)} 間)· 風險環 = 高風險機率;箭頭 = 空屋率與同商圈中位比較")
+    sec(f"房源卡片({len(_cards)} 間)")
     _cards = _cards.sort_values(["quadrant_priority", PROB_COL],
                                 ascending=[True, False]).reset_index(drop=True)
+    from modules.geo_utils import nearest_address
+    from modules import listing_detail as LD
     for _s in range(0, len(_cards), 3):
-        cols = st.columns(3)
+        cols = st.columns(3, gap="medium")
         for _c, (_, r) in zip(cols, _cards.iloc[_s:_s + 3].iterrows()):
-            t_zh, t_c = TIER_ZH[r[TIER_COL]]
+            _, t_c = TIER_ZH[r[TIER_COL]]
             with _c:
-                st.markdown(f"""
-<div style="background:{P['surface']};border:1px solid {P['border']};
-     border-top:4px solid {t_c};border-radius:12px;padding:14px 16px;
-     margin-bottom:12px;">
- <div style="display:flex;gap:12px;align-items:center;">
-  <div>{risk_ring(float(r[PROB_COL]), t_c)}</div>
-  <div style="min-width:0;">
-   <div style="font-weight:700;font-size:.85rem;color:{P['ink']};
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;"
-        title="{str(r['name'])}">#{int(r['id'])} {str(r['name'])[:22]}</div>
-   <div style="font-size:.74rem;color:{P['muted']};margin:2px 0;">
-    {r['neighbourhood_cleansed']}·{ROOM_JP.get(r['room_type'], r['room_type'])}
-    ·${r['price']:,.0f}/晚</div>
-   <div style="font-size:.76rem;margin:3px 0;">
-    <span style="background:{t_c};color:#fff;border-radius:12px;
-     padding:2px 10px;font-weight:700;font-size:.72rem;">{t_zh}</span>
-    <span style="font-size:.72rem;color:{P['muted']};">
-     預測空屋率 {r['vac_pred']*100:.0f}%</span></div>
-   <div style="font-size:.73rem;margin:2px 0;">
-    <span style="background:{P[QD.QUADRANTS[r['quadrant']]['color']]};color:#fff;
-     border-radius:10px;padding:1px 8px;font-weight:700;font-size:.68rem;">
-     {r['quadrant_label']}</span>
-    <span style="color:{P['muted']};margin-left:5px;">
-     {'90天實訂 ' + format(r['booked_rate_d90']*100, '.0f') + '%' if r['booked_rate_d90'] == r['booked_rate_d90'] else '無檔期資料'}</span></div>
-   <div style="font-size:.74rem;">{trend_arrow(r)}</div>
-  </div></div></div>""", unsafe_allow_html=True)
+                _name = _html.escape(str(r["name"]))
+                _district = _html.escape(str(r.get("neighbourhood_cleansed") or "—"))
+                _room = _html.escape(ROOM_JP.get(r.get("room_type"), r.get("room_type", "—")))
+                _photo_url = str(r.get("picture_url", "") or "").strip()
+                _photo = (
+                    f'<img class="listing-card-photo" src="{_html.escape(_photo_url, quote=True)}" '
+                    f'alt="{_name} 房源封面照片" loading="lazy" referrerpolicy="no-referrer">'
+                    if _photo_url.startswith("http") else
+                    '<div class="listing-card-photo-empty">暫無房源照片</div>')
+                _addr = nearest_address(float(r["latitude"]), float(r["longitude"])) or "—"
+                _addr = _html.escape(_addr)
+                _capacity = pd.to_numeric(r.get("accommodates"), errors="coerce")
+                _capacity_txt = "—" if pd.isna(_capacity) else f"可住 {int(_capacity)} 人"
+                _booked90 = pd.to_numeric(r.get("booked_rate_d90"), errors="coerce")
+                _unbooked90 = "—" if pd.isna(_booked90) else f"{(1 - float(_booked90)):.0%}"
+                with st.container(border=True):
+                    st.markdown(
+                        f'<div class="listing-card-accent" style="background:{t_c};"></div>'
+                        f'<div class="listing-card-id">房源 #{int(r["id"])}</div>'
+                        f'<div class="listing-card-title" title="{_name}">{_name}</div>',
+                        unsafe_allow_html=True)
+                    _photo_col, _risk_col = st.columns([1.12, .88], gap="medium",
+                                                       vertical_alignment="top")
+                    with _photo_col:
+                        st.markdown(f"""
+{_photo}
+<div class="listing-card-meta">
+  <div class="listing-card-meta-row"><span class="listing-card-meta-key">行政區</span>
+    <span class="listing-card-meta-value">{_district}</span></div>
+  <div class="listing-card-meta-row"><span class="listing-card-meta-key">推估地址</span>
+    <span class="listing-card-meta-value" title="{_addr}">{_addr}</span></div>
+  <div class="listing-card-meta-row"><span class="listing-card-meta-key">每晚價格</span>
+    <span class="listing-card-meta-value listing-card-price">NT$ {float(r['price']):,.0f}</span></div>
+  <div class="listing-card-meta-row"><span class="listing-card-meta-key">房型</span>
+    <span class="listing-card-meta-value">{_room} · {_capacity_txt}</span></div>
+</div>""", unsafe_allow_html=True)
+                    with _risk_col:
+                        st.markdown(f"""
+<div class="listing-card-risk" aria-label="預估空房率與訂房狀態">
+  <div class="listing-card-risk-label">預估空房率</div>
+  <div class="listing-card-ring">{risk_ring(float(r['vac_pred']), t_c, size=122)}</div>
+  {trend_arrow(r)}
+  <div class="listing-card-calendar">90 天實際未訂房率<strong>{_unbooked90}</strong></div>
+</div>""", unsafe_allow_html=True)
+                    _detail = DF_RAW[DF_RAW["id"] == int(r["id"])]
+                    if st.button("查看詳情", key=f"listing_detail_{int(r['id'])}",
+                                 width="stretch"):
+                        if len(_detail):
+                            LD.open_detail(_detail.iloc[0], show_actions=False)
+                        else:
+                            st.warning("此房源的詳細資料暫時無法載入。")
 
 # ── 詳情頁共用:選擇房源 ──
 _opts = MY.sort_values(PROB_COL, ascending=False)
@@ -496,22 +563,6 @@ with TB2:
                    "動態重排);菱形虛線 = **真實市場數據**:同區同房型房源在各價格帶的實際平均空屋率"
                    "(菱形越大樣本越多)。兩者趨勢一致代表模擬可信;樹模型對價格呈階梯狀反應屬正常。")
 
-    st.caption("住客評論的面向拆解已移至「口碑情報」分頁。")
-
-# ══════════════════════════════════════════════════════════════
-# 口碑情報:評論拆成 14 個面向,與同區基準對照
-# ══════════════════════════════════════════════════════════════
-with TB2R:
-    from modules.absa_sections import render_listing_absa
-    _selR = st.selectbox("選擇房源", list(_opt_lab.keys()), key="rep_tab_sel")
-    _rid2 = _opt_lab[_selR]
-    _rrow2 = MY[MY["id"] == _rid2].iloc[0]
-    render_listing_absa(_rid2, _rrow2["neighbourhood_cleansed"])
-    st.caption("面向以中英關鍵詞比對,情感取關鍵詞前後 30 字的局部窗口計分;"
-               "提及少於 3 次者不列入。全市負評率最高:空調冷氣 15.7%、"
-               "隔音噪音 13.6%、空間大小 13.4%。")
-
-
 # ══════════════════════════════════════════════════════════════
 # TB3 附近比較(熱力圖 + 風險比較 + 同商圈排名 + 跨平台)
 # ══════════════════════════════════════════════════════════════
@@ -721,15 +772,6 @@ with TB3:
                 if _pp is not None else ""))
     except FileNotFoundError:
         pass
-
-# ══════════════════════════════════════════════════════════════
-# TB4 通知中心(共用模組:自動寄信 + 智慧建議 + 手動補寄)
-# ══════════════════════════════════════════════════════════════
-with TB4:
-    from modules.notify_center import render_notify_center
-    render_notify_center(host_id=host_id, prob_col=PROB_COL,
-                         tier_col=TIER_COL, key="host_nc")
-
 
 # ══════════════════════════════════════════════════════════════
 # TB5 未來檔期(calendar.csv.gz · 獨立模組,不影響既有分頁)
