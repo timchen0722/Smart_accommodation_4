@@ -53,3 +53,47 @@ def market_kpis(df: pd.DataFrame, commission: float) -> dict:
         "total_revenue": total,
         "platform_revenue": total * float(commission),
     }
+
+
+def district_health(df: pd.DataFrame, commission: float) -> pd.DataFrame:
+    """行政區健康度:房源數、平均空屋率、高風險占比、平台收入、vs 全市差異。"""
+    cols = ["行政區", "房源數", "平均空屋率", "高風險占比",
+            "預估平台收入", "空屋率vs全市"]
+    if len(df) == 0:
+        return pd.DataFrame(columns=cols)
+    d = add_revenue_columns(df, commission)
+    d["_vac"] = _num(d["vac_pred"])
+    d["_red"] = (d["tier"].astype(str) == "red").astype(int)
+    g = (d.groupby("neighbourhood_cleansed")
+         .agg(房源數=("id", "size"),
+              平均空屋率=("_vac", "mean"),
+              高風險占比=("_red", "mean"),
+              預估平台收入=("platform_revenue", "sum"))
+         .reset_index()
+         .rename(columns={"neighbourhood_cleansed": "行政區"}))
+    g["空屋率vs全市"] = g["平均空屋率"] - float(d["_vac"].mean())
+    return (g[cols].sort_values("高風險占比", ascending=False)
+            .reset_index(drop=True))
+
+
+def host_risk_summary(df: pd.DataFrame, commission: float) -> pd.DataFrame:
+    """房東層級彙總:找出整批房源都在惡化的房東(高風險間數 → 占比 排序)。"""
+    cols = ["host_id", "房源數", "高風險間數", "高風險占比",
+            "平均風險分數", "預估年營收"]
+    if len(df) == 0:
+        return pd.DataFrame(columns=cols)
+    d = add_revenue_columns(df, commission)
+    d["_red"] = (d["tier"].astype(str) == "red").astype(int)
+    d["_prob"] = _num(d["prob"])
+    g = (d.groupby("host_id")
+         .agg(房源數=("id", "size"),
+              高風險間數=("_red", "sum"),
+              高風險占比=("_red", "mean"),
+              平均風險分數=("_prob", "mean"),
+              預估年營收=("est_annual_revenue", "sum"))
+         .reset_index())
+    g["host_id"] = g["host_id"].astype(int)
+    g["高風險間數"] = g["高風險間數"].astype(int)
+    return (g[cols].sort_values(["高風險間數", "高風險占比"],
+                                ascending=[False, False])
+            .reset_index(drop=True))

@@ -73,3 +73,41 @@ def test_market_kpis_空母體回傳零而非例外():
     assert k["avg_vacancy"] == 0.0
     assert k["red_ratio"] == 0.0
     assert k["total_revenue"] == 0.0
+
+
+def test_district_health_欄位與筆數(sample_df):
+    d = pa.district_health(sample_df, commission=0.15)
+    assert list(d.columns) == ["行政區", "房源數", "平均空屋率", "高風險占比",
+                               "預估平台收入", "空屋率vs全市"]
+    assert len(d) == 2
+
+
+def test_district_health_依高風險占比降冪(sample_df):
+    d = pa.district_health(sample_df, commission=0.15)
+    # 信義區 3 間有 2 紅(0.667) > 大安區 3 間有 1 紅(0.333)
+    assert d.iloc[0]["行政區"] == "信義區"
+    assert d.iloc[0]["高風險占比"] == pytest.approx(2 / 3)
+    assert d.iloc[1]["高風險占比"] == pytest.approx(1 / 3)
+
+
+def test_district_health_vs全市差異正負號(sample_df):
+    d = pa.district_health(sample_df, commission=0.15).set_index("行政區")
+    # 大安區均空屋率 (0+0.5+0.8)/3 = 0.4333;全市 0.55 → 差值為負(優於全市)
+    assert d.loc["大安區", "空屋率vs全市"] < 0
+    assert d.loc["信義區", "空屋率vs全市"] > 0
+
+
+def test_host_risk_summary_聚合正確(sample_df):
+    h = pa.host_risk_summary(sample_df, commission=0.15).set_index("host_id")
+    assert len(h) == 3
+    assert h.loc[30, "房源數"] == 2
+    assert h.loc[30, "高風險間數"] == 2
+    assert h.loc[30, "高風險占比"] == pytest.approx(1.0)
+    assert h.loc[30, "平均風險分數"] == pytest.approx(0.85)
+    assert h.loc[10, "高風險間數"] == 0
+
+
+def test_host_risk_summary_排序把整批惡化房東排最前(sample_df):
+    h = pa.host_risk_summary(sample_df, commission=0.15)
+    assert int(h.iloc[0]["host_id"]) == 30
+    assert int(h.iloc[-1]["host_id"]) == 10
