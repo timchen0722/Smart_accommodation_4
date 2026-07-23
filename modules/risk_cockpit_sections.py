@@ -61,3 +61,102 @@ def filter_listings(df: pd.DataFrame, tiers, prob_lo: float, prob_hi: float,
     prob = pd.to_numeric(d["prob"], errors="coerce").fillna(0)
     d = d[(prob >= prob_lo) & (prob <= prob_hi)]
     return d.sort_values("prob", ascending=False)
+
+
+# ── 導覽狀態 callback(在 rerun 前寫 session_state,合法)──────────
+def _clear_selection():
+    for k in [k for k in st.session_state if str(k).startswith("rm_sel_")]:
+        st.session_state[k] = False
+
+
+def _go_hosts():
+    st.session_state["rm_view"] = "hosts"
+    st.session_state["rm_host_filter"] = HOST_ALL
+    st.session_state["rm_expanded_id"] = None
+    _clear_selection()
+
+
+def _go_listings(host_id):
+    st.session_state["rm_view"] = "listings"
+    st.session_state["rm_host_filter"] = int(host_id)
+    st.session_state["rm_expanded_id"] = None
+    _clear_selection()
+
+
+def _toggle_expand(lid):
+    cur = st.session_state.get("rm_expanded_id")
+    st.session_state["rm_expanded_id"] = None if cur == int(lid) else int(lid)
+
+
+def _breadcrumb(view: str):
+    """麵包屑;房源檢視顯示可點回的『房東檢視 › 房源檢視』。"""
+    if view != "listings":
+        st.markdown(
+            f"<span style='color:{P['ink2']};font-weight:700;'>房東檢視</span>",
+            unsafe_allow_html=True)
+        return
+    c = st.columns([1.2, 8])
+    with c[0]:
+        st.button("房東檢視", key="rm_bc_hosts", type="tertiary",
+                  on_click=_go_hosts)
+    with c[1]:
+        st.markdown(
+            f"<span style='color:{P['muted']};'>› </span>"
+            f"<span style='color:{P['ink2']};font-weight:700;'>房源檢視</span>",
+            unsafe_allow_html=True)
+
+
+def render():
+    """後台「🚨 風險管理」入口:依 rm_view 分流房東/房源檢視。"""
+    from modules.platform_sections import guard_scope, commission
+    df = guard_scope()
+    if df is None:
+        return
+    cm = commission()
+
+    sec("高風險房源與房東管理")
+    view = st.session_state.setdefault("rm_view", "hosts")
+    _breadcrumb(view)
+    st.divider()
+    if view == "listings":
+        _render_listings(df, cm)
+    else:
+        _render_hosts(df, cm)
+
+
+def _render_listings(df: pd.DataFrame, cm: float):
+    st.info("(房源檢視於 Task 4 實作)")
+
+
+def _render_hosts(df: pd.DataFrame, cm: float):
+    """房東檢視:模糊查詢 + 可點房東ID排行榜(無勾選、無浮動列)。"""
+    h = pa.host_risk_summary(df, cm)
+    q = st.text_input("🔍 房東ID 模糊查詢", key="rm_host_search",
+                      placeholder="輸入房東ID片段,如 123;留空看全部")
+    res = search_hosts(h, q)
+    _capped = "(僅顯示前 %d 位)" % LEADERBOARD_LIMIT \
+        if len(h) > LEADERBOARD_LIMIT and len(res) >= LEADERBOARD_LIMIT else ""
+    st.caption(f"搜尋結果:{len(res):,} 位房東 · "
+               f"依「高風險間數 → 高風險占比」排序{_capped}")
+    note("點<b>房東ID</b>(藍色連結)即可下鑽該房東名下房源清單並派信。")
+    if not len(res):
+        st.info("查無符合的房東,請調整查詢條件。")
+        return
+
+    widths = [0.6, 1.4, 0.9, 1.2, 1.0, 1.1, 1.3]
+    hdr = st.columns(widths)
+    for col, t in zip(hdr, ["排名", "房東ID", "房源數", "🔴高風險間數",
+                            "高風險占比", "平均風險分數", "預估年營收"]):
+        col.markdown(f"<span style='color:{P['muted']};font-size:.72rem;"
+                     f"font-weight:700;'>{t}</span>", unsafe_allow_html=True)
+    for rank, (_, r) in enumerate(res.iterrows(), 1):
+        hid = int(r["host_id"])
+        c = st.columns(widths)
+        c[0].markdown(f"**{rank}**")
+        c[1].button(f"#{hid} ▸", key=f"rm_host_{hid}", type="tertiary",
+                    on_click=_go_listings, args=(hid,))
+        c[2].markdown(f"{int(r['房源數'])}")
+        c[3].markdown(f"{int(r['高風險間數'])}")
+        c[4].markdown(f"{float(r['高風險占比']):.0%}")
+        c[5].markdown(f"{float(r['平均風險分數']):.0%}")
+        c[6].markdown(_money(float(r['預估年營收'])))
