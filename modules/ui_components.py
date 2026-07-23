@@ -427,7 +427,7 @@ def html_table(df_in, fmt=None, cell_fn=None, height=360, wrap=False, scroll=Tru
     cell_fn = cell_fn or {}
     ws = "normal" if wrap else "nowrap"
     wb = "break-word" if wrap else "normal"
-    th = (f"background:{P['tag_bg']};color:{P['muted']};font-size:.70rem;"
+    th = (f"background:{P['tag_bg']};color:{P['muted']};font-size:.90rem;"
           f"letter-spacing:.07em;text-transform:uppercase;padding:8px 13px;"
           f"border-bottom:2px solid {P['border2']};white-space:{ws};"
           f"text-align:left;position:sticky;top:0;z-index:1;")
