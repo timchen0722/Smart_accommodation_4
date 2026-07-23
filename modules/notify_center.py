@@ -366,3 +366,47 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
                    "LLM 建議需設定 ANTHROPIC_API_KEY 或 GEMINI_API_KEY。")
     else:
         st.caption("尚無通知紀錄;開啟自動寄送或按「✉️ 手動寄出」產生。")
+
+
+# ════════════════════════════════════════════════════════════════
+# 公開介面 — 供後台「風險管理雙檢視」沿用組信/寄送(不改上方任何行為)
+# ════════════════════════════════════════════════════════════════
+def notify_source_df() -> pd.DataFrame:
+    """組信母體(預測 + 房源 meta + 空檔指標);快取沿用 _notify_df()。"""
+    return _notify_df()
+
+
+def _advice_and_compose(row, prob: float, th: float, *,
+                        platform_view: bool = True,
+                        prefer_llm: bool = True) -> tuple[dict, str, str]:
+    """選建議(高風險優先 LLM,否則規則引擎;LLM 失敗退回規則)+ 組信。
+    純函式:不碰 session_state。回傳 (mail, source, status)。"""
+    try:
+        from modules.llm_advisor import llm_available
+        if prefer_llm and llm_available() and prob >= 0.6:
+            src, advice = _llm_advice(row, prob)
+        else:
+            src, advice = "規則引擎", _rule_advice(row)
+        status = "手動寄送成功(模擬)"
+    except Exception as e:
+        src, advice = "規則引擎(LLM 失敗後備)", _rule_advice(row)
+        status = f"手動寄送成功(模擬,LLM 失敗:{type(e).__name__})"
+    mail = _compose(row, prob, th, advice, src,
+                    reason=row.get("_reason") or "風險",
+                    platform_view=platform_view)
+    return mail, src, status
+
+
+def send_for_row(row, th: float = 0.60, *, platform_view: bool = True,
+                 prefer_llm: bool = True) -> dict:
+    """單筆寄送(模擬):組信 + 寫 notify_log + 標記已寄。回傳 mail。
+    需在 Streamlit 執行環境(讀寫 session_state)。"""
+    for k, v in [("notify_log", []), ("auto_sent", set()), ("processed", {})]:
+        if k not in st.session_state:
+            st.session_state[k] = v
+    prob = float(pd.to_numeric(row.get("prob"), errors="coerce") or 0)
+    mail, src, status = _advice_and_compose(
+        row, prob, th, platform_view=platform_view, prefer_llm=prefer_llm)
+    _log(row, prob, th, status, src, mail)
+    st.session_state["auto_sent"].add(int(row["id"]))
+    return mail
