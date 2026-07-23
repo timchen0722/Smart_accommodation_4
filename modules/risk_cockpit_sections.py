@@ -191,8 +191,66 @@ def _listing_rows(shown: pd.DataFrame):
             _lime_panel(r)
 
 
+_BATCH_BAR_CSS = f"""
+<style>
+.st-key-rm-batch-bar {{
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 999;
+  background: {P['surface']}; border-top: 2px solid {P['primary']};
+  box-shadow: 0 -4px 18px rgba(0,0,0,.10); padding: 10px 26px;
+}}
+/* 浮動列出現時,墊高頁面底部避免遮住通知紀錄 */
+[data-testid="stAppViewBlockContainer"] {{ padding-bottom: 96px; }}
+</style>
+"""
+
+
+def _select_ids(ids):
+    for i in ids:
+        st.session_state[f"rm_sel_{int(i)}"] = True
+
+
+def _selected_ids() -> list:
+    out = []
+    for k, v in st.session_state.items():
+        if str(k).startswith("rm_sel_") and v:
+            try:
+                out.append(int(str(k)[len("rm_sel_"):]))
+            except ValueError:
+                pass
+    return out
+
+
+def _send_batch():
+    """批次:對所有勾選房源逐筆組信+模擬寄送(規則引擎,快且穩),清空勾選。"""
+    from modules.notify_center import notify_source_df, send_for_row
+    ids = _selected_ids()
+    src = notify_source_df()
+    ok = 0
+    for lid in ids:
+        hit = src[src["id"] == lid]
+        if len(hit):
+            send_for_row(hit.iloc[0], platform_view=True, prefer_llm=False)
+            ok += 1
+    _clear_selection()
+    st.toast(f"批次模擬寄送完成:{ok} 筆")
+
+
+def _batch_bar():
+    """底部浮動列:僅勾選數 ≥1 時渲染(房東檢視不呼叫本函式)。"""
+    sel = _selected_ids()
+    if not sel:
+        return
+    st.markdown(_BATCH_BAR_CSS, unsafe_allow_html=True)
+    with st.container(key="rm-batch-bar"):
+        c = st.columns([2.4, 1, 1])
+        c[0].markdown(f"**已選 {len(sel)} 間**　將對這些房源產生平台輔導通知")
+        c[1].button(f"✉️ 批次發送 {len(sel)} 筆", key="rm_batch_send",
+                    type="primary", on_click=_send_batch)
+        c[2].button("清除選取", key="rm_batch_clear", on_click=_clear_selection)
+
+
 def _render_listings(df: pd.DataFrame, cm: float):
-    """房源檢視:篩選 + 房源列(可勾選/可展開)+ 通知紀錄。浮動列於 Task 5 接上。"""
+    """房源檢視:篩選 + 房源列(可勾選/可展開)+ 底部批次浮動列 + 通知紀錄。"""
     valid_ids = df["host_id"].astype(int).unique().tolist()
     f1, f2, f3, f4 = st.columns([1, 1, 1.4, 1.2])
     tiers = f1.multiselect("警報層級", ["red", "yellow", "green"],
@@ -218,9 +276,15 @@ def _render_listings(df: pd.DataFrame, cm: float):
         st.info("目前條件下沒有房源;請放寬篩選或改選房東。")
         return
 
+    if host_filter is not None:
+        st.button(f"☑ 全選目前篩選結果({len(shown_ids)} 間)",
+                  key="rm_select_all", type="tertiary",
+                  on_click=_select_ids, args=(shown_ids,))
+
     note("點<b>房源ID</b>(藍色連結)展開 LIME 風險原因與單筆派信;"
-         "勾選左側方框可批次派信(功能於下一步接上)。")
+         "勾選左側方框後,底部會滑出批次派信列。")
     _listing_rows(shown)
+    _batch_bar()
     st.divider()
     _notify_log_section()
 

@@ -75,3 +75,25 @@ def test_房源檢視點房源ID_展開單筆派信鈕():
     lb.click().run()
     assert not at.exception, at.exception
     assert _btn(at, lambda b: str(b.key).startswith("rm_send1_")) is not None
+
+
+def _checkbox(at, pred):
+    return next((cb for cb in at.checkbox if pred(cb)), None)
+
+
+def test_勾選房源_底部浮動批次列現身():
+    at = _run()
+    if not _ready(at):
+        pytest.skip("房東檢視未出現")
+    hb = _btn(at, lambda b: str(b.key).startswith("rm_host_"))
+    if hb is None:
+        pytest.skip("排行榜無房東可點")
+    hb.click().run()
+    cb = _checkbox(at, lambda c: str(c.key).startswith("rm_sel_"))
+    if cb is None:
+        pytest.skip("該房東名下無房源列")
+    # 勾選前:無批次發送鈕
+    assert _btn(at, lambda b: b.key == "rm_batch_send") is None
+    cb.check().run()
+    assert not at.exception, at.exception
+    assert _btn(at, lambda b: b.key == "rm_batch_send") is not None
