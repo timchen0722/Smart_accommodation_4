@@ -77,10 +77,17 @@ def _go_hosts():
 
 
 def _go_listings(host_id):
+    """點房東ID:自動跳到『房源管理』頁簽並鎖定該房東。"""
     st.session_state["rm_view"] = "listings"
     st.session_state["rm_host_filter"] = int(host_id)
     st.session_state["rm_expanded_id"] = None
     _clear_selection()
+
+
+def _go_listings_tab():
+    """直接點『房源管理』頁簽:切到房源檢視,保留目前房東篩選(預設不限=全部)。"""
+    st.session_state["rm_view"] = "listings"
+    st.session_state["rm_expanded_id"] = None
 
 
 def _toggle_expand(lid):
@@ -88,26 +95,23 @@ def _toggle_expand(lid):
     st.session_state["rm_expanded_id"] = None if cur == int(lid) else int(lid)
 
 
-def _breadcrumb(view: str):
-    """麵包屑;房源檢視顯示可點回的『房東檢視 › 房源檢視』。"""
-    if view != "listings":
-        st.markdown(
-            f"<span style='color:{P['ink2']};font-weight:700;'>房東檢視</span>",
-            unsafe_allow_html=True)
-        return
-    c = st.columns([1.2, 8])
-    with c[0]:
-        st.button("房東檢視", key="rm_bc_hosts", type="tertiary",
-                  on_click=_go_hosts)
-    with c[1]:
-        st.markdown(
-            f"<span style='color:{P['muted']};'>› </span>"
-            f"<span style='color:{P['ink2']};font-weight:700;'>房源檢視</span>",
-            unsafe_allow_html=True)
+def _tabs(view: str):
+    """狀態驅動的兩頁簽列(房東管理 / 房源管理)。
+
+    原生 st.tabs 無法由程式自動切換,故以兩顆按鈕當頁簽(綁 rm_view),
+    才能同時支援『可自由切頁簽』與『點房東自動跳到房源管理』。
+    """
+    c = st.columns([1.1, 1.1, 4])
+    c[0].button("🧑‍💼 房東管理", key="rm_tab_hosts", width="stretch",
+                type="primary" if view == "hosts" else "secondary",
+                on_click=_go_hosts)
+    c[1].button("📋 房源管理", key="rm_tab_listings", width="stretch",
+                type="primary" if view == "listings" else "secondary",
+                on_click=_go_listings_tab)
 
 
 def render():
-    """後台「🚨 風險管理」入口:依 rm_view 分流房東/房源檢視。"""
+    """後台「🚨 風險管理」入口:兩頁簽(房東管理 / 房源管理)依 rm_view 分流。"""
     from modules.platform_sections import guard_scope, commission
     df = guard_scope()
     if df is None:
@@ -116,7 +120,7 @@ def render():
 
     sec("高風險房源與房東管理")
     view = st.session_state.setdefault("rm_view", "hosts")
-    _breadcrumb(view)
+    _tabs(view)
     st.divider()
     if view == "listings":
         _render_listings(df, cm)

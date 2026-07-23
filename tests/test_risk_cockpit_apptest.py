@@ -47,17 +47,35 @@ def test_預設房東檢視_無勾選無批次列():
     assert _btn(at, lambda b: b.key == "rm_batch_send") is None
 
 
-def test_點房東ID_切到房源檢視且有麵包屑():
+def test_兩頁簽恆在_且點房東ID自動跳房源管理頁簽():
     at = _run()
     if not _ready(at):
         pytest.skip("房東檢視未出現")
+    # 兩個頁簽按鈕恆在
+    assert _btn(at, lambda b: b.key == "rm_tab_hosts") is not None
+    assert _btn(at, lambda b: b.key == "rm_tab_listings") is not None
     hb = _btn(at, lambda b: str(b.key).startswith("rm_host_"))
     if hb is None:
         pytest.skip("排行榜無房東可點")
     hb.click().run()
     assert not at.exception, at.exception
+    assert at.session_state["rm_view"] == "listings"      # 自動跳頁簽
+    assert at.session_state["rm_host_filter"] != "不限"     # 已鎖定該房東
+    # 點回房東管理頁簽 → 還原
+    at.button(key="rm_tab_hosts").click().run()
+    assert not at.exception, at.exception
+    assert at.session_state["rm_view"] == "hosts"
+
+
+def test_房源管理頁簽直接看全部房源():
+    at = _run()
+    if not _ready(at):
+        pytest.skip("房東檢視未出現")
+    at.button(key="rm_tab_listings").click().run()
+    assert not at.exception, at.exception
     assert at.session_state["rm_view"] == "listings"
-    assert _btn(at, lambda b: b.key == "rm_bc_hosts") is not None
+    assert at.session_state["rm_host_filter"] == "不限"     # 未選房東=全部
+    assert _btn(at, lambda b: str(b.key).startswith("rm_lst_")) is not None
 
 
 def test_房源檢視點房源ID_展開單筆派信鈕():
