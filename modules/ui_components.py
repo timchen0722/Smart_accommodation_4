@@ -66,8 +66,11 @@ def inject_css():
       font-size:.72rem !important;letter-spacing:.08em;text-transform:uppercase;}}
     [data-testid="stMetricValue"]{{color:{P['ink']} !important;
       font-size:1.3rem !important;font-weight:700;
+      font-variant-numeric:tabular-nums;
       white-space:normal !important;overflow:visible !important;
       text-overflow:clip !important;line-height:1.25;}}
+    /* 等寬數字:同一列的 KPI 位數對得齊,數值更新時不會左右跳動 */
+    [data-testid="stMetricDelta"]{{font-variant-numeric:tabular-nums;}}
     [data-testid="stMetricLabel"],[data-testid="stMetricLabel"] *{{
       white-space:normal !important;overflow:visible !important;
       text-overflow:clip !important;}}
@@ -136,7 +139,8 @@ def inject_css():
     }}
     .listing-card-ring{{height:113px;display:flex;align-items:center;justify-content:center;}}
     .listing-card-comparison{{
-      width:100%;min-height:54px;box-sizing:border-box;display:flex;align-items:center;
+      width:100%;min-height:54px;box-sizing:border-box;display:flex;
+      flex-direction:column;align-items:center;
       justify-content:center;padding:7px 10px;border-radius:8px;
       font-size:.76rem;font-weight:700;line-height:1.5;
     }}
@@ -144,16 +148,89 @@ def inject_css():
     .listing-card-comparison-low{{background:#EAF5EE;color:#3D7A55;}}
     .listing-card-comparison-flat{{background:{P['tag_bg']};color:{P['ink2']};}}
     .listing-card-calendar{{
-      width:100%;margin-top:9px;padding-top:8px;border-top:1px solid {P['border']};
-      color:{P['muted']};font-size:.72rem;line-height:1.4;
+      width:100%;box-sizing:border-box;margin-top:9px;padding:6px 10px 7px;
+      background:{P['mbg']};border-radius:8px;
+      color:{P['mtxt']};font-size:.72rem;font-weight:600;line-height:1.4;
     }}
     .listing-card-calendar strong{{
-      display:block;margin-top:2px;color:{P['ink']};font-size:1rem;
+      display:block;margin-top:1px;color:{P['mtxt']};font-size:1rem;font-weight:800;
       font-variant-numeric:tabular-nums;
     }}
     @media(max-width:760px){{
       .listing-card-photo,.listing-card-photo-empty{{height:210px;}}
       .listing-card-meta{{font-size:.8rem;}}
+    }}
+    /* ── 定價情報:左「房源」右「跨平台價格」等高雙欄 ────────────── */
+    /* 左欄是固定高 HTML 區塊(--pricing-h)＋一顆按鈕;右欄是錨點列＋
+       2×2 的「卡片＋該平台按鈕」。--pricing-h 依右欄實測高度回推,
+       兩欄底部因此切齊,改動卡高或按鈕時需重新量測。 */
+    .pricing-pane{{--pricing-h:468px;height:var(--pricing-h);box-sizing:border-box;}}
+    .pricing-left{{display:flex;flex-direction:column;gap:10px;}}
+    .pricing-left>div{{flex:0 0 auto;}}
+    .pricing-photo{{
+      flex:1 1 auto;min-height:0;width:100%;object-fit:cover;border-radius:12px;
+      border:1px solid {P['border']};background:{P['tag_bg']};
+    }}
+    .pricing-photo-empty{{
+      display:flex;align-items:center;justify-content:center;
+      border-style:dashed;border-color:{P['border2']};color:{P['muted']};font-size:.78rem;
+    }}
+    .pricing-anchor{{
+      display:flex;align-items:baseline;gap:9px;padding:9px 14px;
+      background:{P['mbg']};border:1px solid {P['border']};border-radius:12px;
+    }}
+    .pricing-anchor-label{{
+      font-size:.71rem;font-weight:700;color:{P['mtxt']};letter-spacing:.06em;
+    }}
+    .pricing-anchor-value{{
+      font-size:1.42rem;font-weight:800;color:{P['mtxt']};
+      font-variant-numeric:tabular-nums;line-height:1.1;
+    }}
+    .pricing-anchor-sub{{margin-left:auto;font-size:.71rem;color:{P['muted']};}}
+    /* 四張平台卡不做代表色區分,一律同一組中性配色。 */
+    .pf-card{{
+      display:flex;flex-direction:column;gap:5px;height:172px;box-sizing:border-box;
+      padding:10px 12px 11px;
+      background:{P['card']};border:1px solid {P['border']};border-radius:12px;
+      border-top:3px solid {P['primary']};
+    }}
+    .pf-head{{
+      display:flex;align-items:center;gap:6px;font-size:.68rem;font-weight:700;
+      letter-spacing:.07em;color:{P['muted']};
+    }}
+    .pf-dot{{width:7px;height:7px;border-radius:50%;
+      background:{P['primary']};flex:none;}}
+    .pf-count{{margin-left:auto;letter-spacing:0;color:{P['ink2']};}}
+    .pf-value{{
+      font-size:1.32rem;font-weight:800;color:{P['ink']};line-height:1.15;
+      font-variant-numeric:tabular-nums;
+    }}
+    .pf-unit{{margin-left:5px;font-size:.66rem;font-weight:600;color:{P['muted']};}}
+    .pf-delta{{
+      align-self:flex-start;font-size:.69rem;font-weight:700;
+      padding:2px 9px;border-radius:999px;
+    }}
+    .pf-delta-low{{background:#EAF5EE;color:#3D7A55;}}
+    .pf-delta-high{{background:#FEF2F0;color:#A03028;}}
+    .pf-delta-flat{{background:{P['tag_bg']};color:{P['ink2']};}}
+    .pf-bars{{margin-top:auto;display:grid;gap:5px;}}
+    .pf-bar-row{{
+      display:grid;grid-template-columns:26px 1fr auto;align-items:center;gap:7px;
+      font-size:.65rem;color:{P['muted']};
+    }}
+    .pf-bar{{
+      height:5px;border-radius:3px;background:{P['tag_bg']};overflow:hidden;display:block;
+    }}
+    .pf-bar>i{{display:block;height:100%;border-radius:3px;}}
+    .pf-bar-val{{
+      color:{P['ink2']};font-weight:700;font-variant-numeric:tabular-nums;
+    }}
+    .pf-empty{{margin:auto;font-size:.72rem;color:{P['muted']};}}
+    .pf-card .hv-anchor{{font-size:.65rem;}}
+    @media(max-width:760px){{
+      .pricing-pane{{height:auto;}}
+      .pricing-photo{{flex:0 0 auto;height:210px;}}
+      .pf-card{{height:auto;min-height:172px;}}
     }}
     .quadrant-table-wrap{{
       overflow-x:auto;margin-top:8px;background:{P['surface']};
@@ -334,13 +411,17 @@ def stat_card(value, label, color=None):
     </div>''', unsafe_allow_html=True)
 
 
-def html_table(df_in, fmt=None, cell_fn=None, height=360, wrap=False, scroll=True):
+def html_table(df_in, fmt=None, cell_fn=None, height=360, wrap=False, scroll=True,
+               widths=None):
     """Render a styled HTML table.
 
     wrap=True   lets cell text wrap so every column fits the width
                 (no bottom/horizontal scrollbar).
     scroll=False renders the full table with no inner scroll container
                 (the dialog/page provides its own vertical scroll).
+    widths      optional {欄名: CSS 寬度},例如 {"地址": "26%"}。wrap=True 會啟用
+                table-layout:fixed,預設把寬度平均分給每一欄,長文字欄(房源名稱、
+                地址)因此被擠壓;給了 widths 就改用 <colgroup> 依重要性分配。
     """
     fmt = fmt or {}
     cell_fn = cell_fn or {}
@@ -376,10 +457,13 @@ def html_table(df_in, fmt=None, cell_fn=None, height=360, wrap=False, scroll=Tru
                  else 'overflow:visible;')
     tstyle = ("width:100%;border-collapse:collapse;"
               + ("table-layout:fixed;" if wrap else ""))
+    cg = ("<colgroup>" + "".join(
+        f'<col style="width:{widths[c]};">' if c in widths else "<col>"
+        for c in df_in.columns) + "</colgroup>") if widths else ""
     st.markdown(
         f'<div style="{container}border:1px solid {P["border"]};'
         f'border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.03);">'
-        f'<table style="{tstyle}">'
+        f'<table style="{tstyle}">{cg}'
         f'<thead><tr>{hdr}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>',
         unsafe_allow_html=True)
 

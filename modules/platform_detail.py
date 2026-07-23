@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import html as _html
+import inspect
 
 import numpy as np
 import pandas as pd
@@ -20,6 +21,14 @@ from modules.geo_utils import nearest_address
 from modules.ui_components import P, html_table, sec
 
 _DIALOG = getattr(st, "dialog", None) or getattr(st, "experimental_dialog", None)
+# st.dialog 預設 width="small",裝不下 4 張指標卡與 7 欄掛牌明細(欄位會被截斷),
+# 因此固定用 large;舊版沒有 width 參數時自動退回預設寬度。
+_DIALOG_KW = ({"width": "large"} if _DIALOG and "width" in
+              inspect.signature(_DIALOG).parameters else {})
+
+# 掛牌明細各欄寬度:長文字欄(房源名稱、地址)吃掉大部分寬度,數字欄只留夠用的量。
+_DETAIL_WIDTHS = {"房源": "23%", "地址": "25%", "掛牌價": "11%",
+                  "每人每晚": "11%", "可住": "7%", "距離": "9%", "補充": "14%"}
 
 # 平台顯示名稱與代表色
 PLATFORM = {
@@ -151,23 +160,25 @@ def render_platform(platform: str, sub: pd.DataFrame, radius_m: float,
     show["每人每晚"] = show["price_pp_day"].map(lambda v: f"${v:,.0f}")
     show["距離"] = show["dist_m"].map(lambda v: f"{v:,.0f} m")
     show["可住"] = show["capacity"].map(lambda v: f"{v:,.0f} 人")
+    # 儲存格會自動換行(wrap=True),截斷長度放寬到不至於破壞版面即可,
+    # 不再切在 30/24 字讓房源名稱與補充說明看不完整。
     show["房源"] = [
         f'<a href="{u}" target="_blank" style="color:{col};">'
-        f'{_html.escape(str(t)[:30])} ↗</a>' if isinstance(u, str) and u.startswith("http")
-        else _html.escape(str(t)[:30])
+        f'{_html.escape(str(t)[:70])} ↗</a>' if isinstance(u, str) and u.startswith("http")
+        else _html.escape(str(t)[:70])
         for t, u in zip(show["title"], show["url"])]
     cols = ["房源", "地址", "掛牌價", "每人每晚", "可住", "距離"]
     if show["note"].notna().any():
-        show["補充"] = show["note"].astype(str).str.slice(0, 24)
+        show["補充"] = show["note"].astype(str).str.slice(0, 60)
         cols.append("補充")
-    html_table(show[cols], height=330, wrap=True)
+    html_table(show[cols], height=430, wrap=True, widths=_DETAIL_WIDTHS)
     st.caption("補充欄位:Airbnb 為房型;Booking 為房型名稱;"
                "591 為房屋類型與坪數;租租網為房型、坪數與最短租期。"
                "月租平台的每人每晚為 ÷30 換算之等效價,未計押金與管理費。")
 
 
 if _DIALOG:
-    @_DIALOG("🗂 平台掛牌詳情")
+    @_DIALOG("🗂 平台掛牌詳情", **_DIALOG_KW)
     def _platform_dialog(platform, sub, radius_m, my_pp=None):
         render_platform(platform, sub, radius_m, my_pp)
 else:

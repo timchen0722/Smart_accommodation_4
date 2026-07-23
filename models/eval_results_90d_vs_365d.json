@@ -1,0 +1,40 @@
+{
+  "dataset_info": {
+    "total_2026_listings": 6419,
+    "backfilled_host_since_count": 5852,
+    "unmatched_new_hosts_count": 567,
+    "benchmark_overlapping_count": 4643
+  },
+  "model_90d_metrics": {
+    "classification": {
+      "roc_auc": 0.6901,
+      "pr_auc": 0.695,
+      "brier_score": 0.2226,
+      "red_alert_precision": 0.6986,
+      "red_alert_coverage": 0.2972,
+      "yellow_alert_precision": 0.5574,
+      "yellow_alert_coverage": 0.8122
+    },
+    "regression": {
+      "mae": 0.2338,
+      "rmse": 0.2969,
+      "r2": 0.114
+    }
+  },
+  "model_365d_metrics": {
+    "classification": {
+      "roc_auc": 0.6918,
+      "pr_auc": 0.567,
+      "brier_score": 0.1978,
+      "red_alert_precision": 0.7803,
+      "red_alert_coverage": 0.0676,
+      "yellow_alert_precision": 0.4917,
+      "yellow_alert_coverage": 0.4043
+    },
+    "regression": {
+      "mae": 0.2265,
+      "rmse": 0.2731,
+      "r2": 0.2021
+    }
+  }
+}
