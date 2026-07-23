@@ -124,8 +124,118 @@ def render():
         _render_hosts(df, cm)
 
 
+def _lime_reasons(listing_id: int, top: int = 3) -> list:
+    """單一房源 Top-N 風險原因;回傳 [(中文特徵名, 百分點)](自 platform_sections 移入)。"""
+    from modules.vacancy_model import contributions, get_row
+    row = get_row(int(listing_id))
+    if row is None:
+        return []
+    return [(zh, dpp) for _f, zh, dpp in contributions(row, top=top)]
+
+
+def _send_single(lid):
+    """LIME 面板『產生此房源輔導通知』:單筆組信+模擬寄送(平台視角,高風險優先 LLM)。"""
+    from modules.notify_center import notify_source_df, send_for_row
+    src = notify_source_df()
+    hit = src[src["id"] == int(lid)]
+    if len(hit):
+        mail = send_for_row(hit.iloc[0], platform_view=True, prefer_llm=True)
+        st.toast(f"已模擬寄送至 {mail['to']}")
+    else:
+        st.toast("查無此房源的通知資料")
+
+
+def _lime_panel(row: pd.Series):
+    """展開於房源列下方:Top-3 LIME 原因 + 單筆發送鈕。"""
+    lid = int(row["id"])
+    with st.spinner("計算風險歸因 …"):
+        reasons = _lime_reasons(lid, top=3)
+    if reasons:
+        for zh, dpp in reasons:
+            color = P["high"] if dpp > 0 else P["low"]
+            sign = "推高" if dpp > 0 else "降低"
+            st.markdown(
+                f"<div style='border-left:4px solid {color};"
+                f"background:{P['surface']};border-radius:0 8px 8px 0;"
+                f"padding:9px 14px;margin:6px 0;'><b>{zh}</b> — {sign}空屋風險 "
+                f"<span style='color:{color};font-weight:700;'>"
+                f"{dpp:+.2f} 個百分點</span></div>", unsafe_allow_html=True)
+    else:
+        st.caption("此房源無足夠特徵可解釋。")
+    st.button("✉️ 產生此房源輔導通知", key=f"rm_send1_{lid}",
+              on_click=_send_single, args=(lid,))
+
+
+def _listing_rows(shown: pd.DataFrame):
+    """房源列:每列 = [checkbox][可點ID][其他欄位];點ID展開 LIME 面板。"""
+    expanded = st.session_state.get("rm_expanded_id")
+    widths = [0.5, 1.3, 1.0, 0.9, 1.0, 0.9, 1.0, 1.0]
+    hdr = st.columns(widths)
+    for col, t in zip(hdr, ["選取", "房源ID", "行政區", "房型", "每晚房價",
+                            "風險分數", "警報層級", "房東ID"]):
+        col.markdown(f"<span style='color:{P['muted']};font-size:.7rem;"
+                     f"font-weight:700;'>{t}</span>", unsafe_allow_html=True)
+    for _, r in shown.iterrows():
+        lid = int(r["id"])
+        c = st.columns(widths)
+        c[0].checkbox("選取", key=f"rm_sel_{lid}", label_visibility="collapsed")
+        c[1].button(f"#{lid} ▸", key=f"rm_lst_{lid}", type="tertiary",
+                    on_click=_toggle_expand, args=(lid,))
+        c[2].markdown(str(r["neighbourhood_cleansed"]))
+        c[3].markdown(ROOM_ZH.get(r["room_type"], str(r["room_type"])))
+        c[4].markdown(f"${pd.to_numeric(r['price'], errors='coerce'):,.0f}")
+        c[5].markdown(f"{pd.to_numeric(r['prob'], errors='coerce'):.0%}")
+        c[6].markdown(TIER_ZH.get(str(r["tier"]), str(r["tier"])))
+        c[7].markdown(f"#{int(r['host_id'])}")
+        if expanded == lid:
+            _lime_panel(r)
+
+
 def _render_listings(df: pd.DataFrame, cm: float):
-    st.info("(房源檢視於 Task 4 實作)")
+    """房源檢視:篩選 + 房源列(可勾選/可展開)+ 通知紀錄。浮動列於 Task 5 接上。"""
+    valid_ids = df["host_id"].astype(int).unique().tolist()
+    f1, f2, f3, f4 = st.columns([1, 1, 1.4, 1.2])
+    tiers = f1.multiselect("警報層級", ["red", "yellow", "green"],
+                           default=["red"], format_func=lambda t: TIER_ZH[t],
+                           key="rm_tiers")
+    topn = f2.slider("顯示筆數", 20, 300, LISTING_LIMIT_DEFAULT, 20, key="rm_topn")
+    lo, hi = f3.slider("風險分數區間", 0.0, 1.0, (0.0, 1.0), 0.05, key="rm_prob")
+    opts = [HOST_ALL] + sorted(valid_ids)
+    if st.session_state.get("rm_host_filter", HOST_ALL) not in opts:
+        st.session_state["rm_host_filter"] = HOST_ALL     # 掉出母體→重置(合法,widget 前)
+    f4.selectbox("房東ID(可打字搜尋)", opts, key="rm_host_filter",
+                 format_func=lambda x: x if x == HOST_ALL else f"#{int(x)}")
+    host_filter = resolve_host_filter(
+        st.session_state.get("rm_host_filter", HOST_ALL), valid_ids)
+
+    fdf = filter_listings(df, tiers, lo, hi, host_filter)
+    shown = fdf.head(topn)
+    shown_ids = shown["id"].astype(int).tolist()
+
+    _scope = f"🎯 已鎖定房東 #{host_filter};" if host_filter is not None else ""
+    st.caption(f"{_scope}符合 {len(fdf):,} 間,顯示風險分數最高的 {len(shown):,} 間")
+    if not shown_ids:
+        st.info("目前條件下沒有房源;請放寬篩選或改選房東。")
+        return
+
+    note("點<b>房源ID</b>(藍色連結)展開 LIME 風險原因與單筆派信;"
+         "勾選左側方框可批次派信(功能於下一步接上)。")
+    _listing_rows(shown)
+    st.divider()
+    _notify_log_section()
+
+
+def _notify_log_section():
+    """通知紀錄(單筆/批次共用 st.session_state['notify_log'])。"""
+    sec("通知紀錄")
+    log = st.session_state.get("notify_log", [])
+    if log:
+        html_table(pd.DataFrame(log)[["房源", "收件者", "機率", "門檻",
+                                      "觸發原因", "建議來源", "狀態", "時間"]],
+                   height=230)
+    else:
+        st.caption("尚無通知紀錄;點房源展開後按「✉️ 產生此房源輔導通知」,"
+                   "或勾選房源後批次發送。")
 
 
 def _render_hosts(df: pd.DataFrame, cm: float):

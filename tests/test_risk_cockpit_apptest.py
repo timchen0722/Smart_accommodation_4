@@ -58,3 +58,20 @@ def test_點房東ID_切到房源檢視且有麵包屑():
     assert not at.exception, at.exception
     assert at.session_state["rm_view"] == "listings"
     assert _btn(at, lambda b: b.key == "rm_bc_hosts") is not None
+
+
+def test_房源檢視點房源ID_展開單筆派信鈕():
+    at = _run()
+    if not _ready(at):
+        pytest.skip("房東檢視未出現")
+    hb = _btn(at, lambda b: str(b.key).startswith("rm_host_"))
+    if hb is None:
+        pytest.skip("排行榜無房東可點")
+    hb.click().run()
+    assert not at.exception, at.exception
+    lb = _btn(at, lambda b: str(b.key).startswith("rm_lst_"))
+    if lb is None:
+        pytest.skip("該房東名下無房源列")
+    lb.click().run()
+    assert not at.exception, at.exception
+    assert _btn(at, lambda b: str(b.key).startswith("rm_send1_")) is not None
