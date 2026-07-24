@@ -12,14 +12,14 @@ import html as _html
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 from google import genai
 from google.genai.errors import APIError
 
+from modules import design_tokens as T
 from modules.ui_components import (inject_css, P, ROOM_JP, sec, mb, note,
-                                   html_table, apply_theme, sidebar_nav)
+                                   numbered_section_title, overview_metric_card,
+                                   sidebar_nav)
 from modules.data_loader import load_listings
 from modules import feature_engineering as fe
 from modules.feature_engineering import (predict_risk_v2, simulate_price_change,
@@ -32,11 +32,8 @@ st.set_page_config(page_title="房東入口 — 智慧旅宿", page_icon="🏠",
                    layout="wide", initial_sidebar_state="expanded")
 inject_css()
 
-TIER_ZH = {"red": ("🔴 高風險", P["high"]), "yellow": ("🟡 觀察", P["medium"]),
-           "green": ("🟢 安全", P["low"])}
-_PLAT_COLORS = {"Airbnb": "#FF5A5F", "Booking": "#4E7FB0",
-                "591": "#C49A4A", "ddroom": "#8B7BA8"}
-
+# (文案, 色碼) 一律由 design_tokens 產生;呼叫端維持原本的 tuple 解包寫法。
+TIER_ZH = {k: (T.tier_label(k), T.tier_color(k)) for k in T.TIER_ORDER}
 
 # ─── 資料載入(快取) ─────────────────────────────────────────
 @st.cache_data(show_spinner="載入房源與預測資料 …")
@@ -78,40 +75,62 @@ DS_IDX = DS.set_index("id")
 with st.sidebar:
     sidebar_nav()
     st.markdown("#### 🎯 請選擇登入的房東")
+    # 選單僅顯示房東名稱與 ID;房源間數與高風險紅點不再出現在此。
     _hc = (PREDS.groupby(["host_id"])
-           .agg(n=("id", "size"), host_name=("host_name", "first"),
-                red=("tier", lambda s: int((s == "red").sum())))
+           .agg(n=("id", "size"), host_name=("host_name", "first"))
            .sort_values("n", ascending=False).reset_index())
     _hlab = _hc.apply(lambda r: f"{r['host_name'] or '房東'}"
-                                f"(ID {int(r['host_id'])}·{int(r['n'])} 間"
-                                f"{'·🔴' + str(r['red']) if r['red'] else ''})",
-                      axis=1)
+                                f"(ID {int(r['host_id'])})", axis=1)
     _hi = st.selectbox("host", range(len(_hc)), format_func=lambda i: _hlab[i],
                        label_visibility="collapsed")
     host_id = int(_hc.iloc[_hi]["host_id"])
     MY = PREDS[PREDS["host_id"] == host_id].reset_index(drop=True)
 
-    st.markdown("#### 🧠 風險分類模型")
-    _ap = st.radio("algo", ["LightGBM（主力）", "XGBoost（對照）"],
-                   label_visibility="collapsed")
-    ALGO = "xgb" if "XGBoost" in _ap else "lgbm"
-    # 全站統一口徑:所有風險值皆為所選模型之 GroupKFold OOF 誠實預測
-    PROB_COL = "prob_xgb" if (ALGO == "xgb" and "prob_xgb" in PREDS.columns) else "prob"
-    TIER_COL = "tier_xgb" if (ALGO == "xgb" and "tier_xgb" in PREDS.columns) else "tier"
-    if TIER_COL != "tier":
-        PREDS = QD.annotate(PREDS, tier_col=TIER_COL)
-        MY = PREDS[PREDS["host_id"] == host_id].reset_index(drop=True)
+    # 切換房東時,行政區／房型篩選要重置為該房東的預設全選,「選擇房源」
+    # 下拉也要清除,否則沿用上一位房東的選取值:
+    # - multiselect 一旦帶 key,session_state 裡的舊選取值會蓋過 default,
+    #   不清除會少列出新房東的行政區/房型(僅顯示上一位房東仍有的子集)。
+    # - selectbox(nb_sel/cal_sel/rep_sel)若沿用上一位房東的房源 ID,
+    #   而該 ID 不在新房東的選單中,會直接丟出 StreamlitAPIException。
+    if st.session_state.get("_active_host_id") != host_id:
+        st.session_state["_active_host_id"] = host_id
+        for _k in ("card_district", "card_room", "nb_sel", "risk_sel", "cal_sel", "rep_sel"):
+            st.session_state.pop(_k, None)
 
-    radius = st.slider("📏 附近比較半徑 (公尺)", 500, 2000, 1000, step=100)
+    # 全站統一口徑:所有風險值皆為 HistGradientBoosting(主力)之 GroupKFold OOF 誠實預測
+    ALGO = "histgb"
+    PROB_COL = "prob"
+    TIER_COL = "tier"
+
+    # 房源總表卡片的篩選條件(僅影響 TB1 房源卡,不改變上方摘要與象限統計)
+    # 篩選介面與租客入口一致:多選 multiselect,預設全選。
+    st.markdown("#### 🔍 房源篩選")
+    _dist_opts = sorted(MY["neighbourhood_cleansed"].dropna().astype(str).unique())
+    DIST_PICK = st.multiselect("🗺 行政區（可複選）", _dist_opts,
+                               default=_dist_opts, key="card_district")
+    _room_opts = sorted(MY["room_type"].dropna().astype(str).unique())
+    ROOM_PICK = st.multiselect("🛏 房型（可複選）", _room_opts, default=_room_opts,
+                               key="card_room",
+                               format_func=lambda v: ROOM_JP.get(v, v))
+
     st.divider()
-    st.caption("LightGBM+XGBoost(Isotonic 校準)· 標籤 Y≥0.6 · "
-               "LIME 可解釋 · GroupKFold 誠實驗證 · 59 特徵(含負評比例)")
+    st.caption("HistGradientBoosting+XGBoost(Isotonic 校準)· 標籤 vacancy_90 > 0.70 · "
+               "LIME 可解釋 · GroupKFold 誠實驗證 · 37 核心特徵")
 
 st.markdown(f"""
 <div style="padding:6px 0 10px;">
   <h1 style="font-size:1.4rem;font-weight:700;color:{P['ink']};margin:0;">
   房東營運面板</h1>
 </div><hr style="margin:0 0 12px;">""", unsafe_allow_html=True)
+
+# 側邊欄的行政區／房型篩選為全頁範圍:房源總表的統計與卡片、以及定價情報、
+# 未來檔期、風險診斷、月報的房源選單皆以 SCOPE 為準(月報彙整同一範圍)。
+SCOPE = MY[MY["neighbourhood_cleansed"].astype(str).isin(DIST_PICK)
+           & MY["room_type"].astype(str).isin(ROOM_PICK)].reset_index(drop=True)
+_filtered = len(SCOPE) != len(MY)
+if SCOPE.empty:
+    st.info("目前篩選條件下沒有符合的房源,請調整側邊欄的行政區或房型。")
+    st.stop()
 
 # 分頁順序 = 使用順序:先看該處理哪間,再看定價、檔期;
 # 模型與 LIME 診斷退居後排(前瞻驗證 AUC 0.632,僅作輔助排序)。
@@ -147,12 +166,42 @@ def trend_arrow(row):
                 "暫無行政區空房率基準</span>")
     if d > 0.02:
         return ("<span class='listing-card-comparison listing-card-comparison-high'>"
-                f"高於{district}中位數空房率 {d*100:.0f}pp</span>")
+                f"<span>高於{district}中位數</span>"
+                f"<span>空房率 {d*100:.0f} 百分比</span></span>")
     if d < -0.02:
         return ("<span class='listing-card-comparison listing-card-comparison-low'>"
-                f"低於{district}中位數空房率 {abs(d)*100:.0f}pp</span>")
+                f"<span>低於{district}中位數</span>"
+                f"<span>空房率 {abs(d)*100:.0f} 百分比</span></span>")
     return ("<span class='listing-card-comparison listing-card-comparison-flat'>"
-            f"與{district}中位數空房率持平</span>")
+            f"<span>與{district}中位數</span><span>空房率持平</span></span>")
+
+
+def platform_card_html(platform, stats, sub, my_pp, radius_m):
+    """跨平台價格卡：平台中位每人每晚與本房源的精簡價差。"""
+    from modules import platform_detail as PD
+    head = (f'<div class="pf-head"><span class="pf-dot"></span>'
+            f'{_html.escape(PD.label(platform))}'
+            f'<span class="pf-count">{int(stats["count"]) if stats else 0} 筆</span>'
+            f'</div>')
+    if not stats or not stats.get("count"):
+        return (f'<div class="pf-card">{head}'
+                f'<div class="pf-empty">此半徑內無掛牌資料</div></div>')
+    med = float(stats["pp_median"])
+    diff = my_pp / med - 1 if med else np.nan
+    gap = abs(my_pp - med)
+    if not np.isfinite(diff) or abs(diff) < .02:
+        delta = (f'<span class="pf-delta pf-delta-flat">與中位持平'
+                 f'（差額 {gap:,.0f}元／每晚）</span>')
+    elif diff < 0:
+        delta = (f'<span class="pf-delta pf-delta-low">我的便宜 '
+                 f'{abs(diff)*100:.0f}%（{gap:,.0f}元／每晚）</span>')
+    else:
+        delta = (f'<span class="pf-delta pf-delta-high">我的貴 '
+                 f'{diff*100:.0f}%（{gap:,.0f}元／每晚）</span>')
+    return (f'<div class="pf-card">{head}'
+            f'<div class="pf-value">${med:,.0f}'
+            f'<span class="pf-unit">中位每人每晚</span></div>{delta}'
+            f'{PD.hover_card_html(platform, sub, radius_m, my_pp)}</div>')
 
 
 def quadrant_summary_table(summary_df):
@@ -191,36 +240,54 @@ def quadrant_summary_table(summary_df):
 # TB1 房東總覽
 # ══════════════════════════════════════════════════════════════
 with TB1:
-    _gapd = MY["gap_days_30d"].fillna(0)
-    _alarm = int((MY["quadrant"] == "alarm").sum())
+    if _filtered:
+        _dist_txt = "、".join(DIST_PICK) if DIST_PICK else "未選行政區"
+        _room_txt = ("、".join(ROOM_JP.get(v, v) for v in ROOM_PICK)
+                     if ROOM_PICK else "未選房型")
+        st.caption(f"目前篩選:{_dist_txt} · {_room_txt}"
+                   f"({len(SCOPE)}／{len(MY)} 間)")
+    _gapd = SCOPE["gap_days_30d"].fillna(0)
+    _alarm = int((SCOPE["quadrant"] == "alarm").sum())
+    _alarm_all = int((MY["quadrant"] == "alarm").sum())
     k1, k2, k3, k4, k5 = st.columns(5)
     _overview = [
-        ("名下房源", f"{len(MY)} 間"),
-        ("近 30 天訂房率", "—" if MY["booked_rate_d30"].isna().all()
-         else f"{MY['booked_rate_d30'].mean()*100:.0f}%"),
+        ("篩選後房源" if _filtered else "名下房源",
+         f"{len(SCOPE)}／{len(MY)} 間" if _filtered else f"{len(MY)} 間"),
+        ("近 30 天訂房率", "—" if SCOPE["booked_rate_d30"].isna().all()
+         else f"{SCOPE['booked_rate_d30'].mean()*100:.0f}%"),
         ("30 天空檔", f"{int(_gapd.sum())} 天"),
-        ("需優先處理", f"{_alarm} 間"),
-        ("平均預測空屋率", f"{MY['vac_pred'].mean()*100:.0f}%"),
+        ("需優先處理", f"{_alarm}／{_alarm_all} 間" if _filtered else f"{_alarm} 間"),
+        ("平均預測空屋率", "—" if SCOPE["vac_pred"].isna().all()
+         else f"{SCOPE['vac_pred'].mean()*100:.0f}%"),
     ]
     for _col, (_label, _value) in zip((k1, k2, k3, k4, k5), _overview):
+        _val_style = ' style="color:#D32F2F;"' if _label == "需優先處理" else ''
         _col.markdown(
             f'<div class="overview-metric"><div class="overview-metric-label">'
-            f'{_label}</div><div class="overview-metric-value">{_value}</div></div>',
+            f'{_label}</div><div class="overview-metric-value"{_val_style}>{_value}</div></div>',
             unsafe_allow_html=True)
     st.markdown(f"""
     <div style="margin:20px 0 8px;font-size:1.15rem;font-weight:700;
          color:{P['ink']};letter-spacing:.01em;">
       模型預估與90實際訂房分析
     </div>""", unsafe_allow_html=True)
-    _qs = QD.summary(MY)
-    quadrant_summary_table(_qs)
+    _qs = QD.summary(SCOPE)
+    if not SCOPE.empty:
+        quadrant_summary_table(_qs)
 
     _qopts = ["全部"] + _qs["象限"].tolist()
-    _qpick = st.radio("篩選象限", _qopts, horizontal=True, key="q_filter")
-    _cards = MY.copy()
+    _card_title = st.empty()
+    _qpick = st.radio("營運狀態", _qopts, horizontal=True, key="q_filter")
+    _cards = SCOPE.copy()
     if _qpick != "全部":
         _cards = _cards[_cards["quadrant_label"] == _qpick]
-    sec(f"房源卡片({len(_cards)} 間)")
+    _card_title.markdown(
+        f'<h2 style="margin:24px 0 4px;font-size:1.45rem;line-height:1.35;'
+        f'font-weight:800;letter-spacing:-.01em;color:{P["ink"]};">'
+        f'房源卡片（{len(_cards)} 間）</h2>',
+        unsafe_allow_html=True)
+    if _cards.empty:
+        st.info("目前篩選條件下沒有符合的房源,請調整側邊欄的行政區或房型。")
     _cards = _cards.sort_values(["quadrant_priority", PROB_COL],
                                 ascending=[True, False]).reset_index(drop=True)
     from modules.geo_utils import nearest_address
@@ -282,11 +349,49 @@ with TB1:
                         else:
                             st.warning("此房源的詳細資料暫時無法載入。")
 
-# ── 詳情頁共用:選擇房源 ──
-_opts = MY.sort_values(PROB_COL, ascending=False)
-_opt_lab = {f"#{int(r['id'])}|{str(r['name'])[:26]}|"
-            f"{TIER_ZH[r[TIER_COL]][0]} {r[PROB_COL]*100:.0f}%": int(r["id"])
-            for _, r in _opts.iterrows()}
+# ── 詳情頁共用:選擇房源(僅列出符合側邊欄篩選的房源) ──
+_opts = SCOPE.sort_values(PROB_COL, ascending=False)
+# 選單只顯示房源名稱;同名房源才補上 ID 以便區分。
+_opt_lab = {}
+for _, _r in _opts.iterrows():
+    _nm = "" if pd.isna(_r["name"]) else str(_r["name"]).strip()
+    _lbl = _nm or f"未命名房源 #{int(_r['id'])}"
+    if _lbl in _opt_lab:
+        _lbl = f"{_lbl}(ID {int(_r['id'])})"
+    _opt_lab[_lbl] = int(_r["id"])
+
+# ── 定價情報頁首:選擇房源 + 附近比較半徑 ──
+# 這段先於其他分頁執行,讓 radius 在所有引用它的分頁(定價情報、風險診斷的
+# 跨平台比較)都取得同一個使用者設定值;版面仍渲染在「房源定價情報」分頁最上方。
+with TB2P:
+    # 控制列與下方內容使用完全相同的欄寬與間距，兩條垂直邊界才能對齊。
+    with st.container(key="pricing-controls"):
+        _c_sel, _c_rad = st.columns([1.02, .98], gap="medium",
+                                    vertical_alignment="center")
+        with _c_sel:
+            _sel_label, _sel_input = st.columns([.18, 1],
+                                                vertical_alignment="center")
+            _sel_label.markdown(
+                "<div class='pricing-control-label'>選擇房源</div>",
+                unsafe_allow_html=True)
+            with _sel_input:
+                _sel3 = st.selectbox("選擇房源", list(_opt_lab.keys()), key="nb_sel",
+                                     label_visibility="collapsed")
+        with _c_rad:
+            with st.container(key="pricing-radius-control"):
+                _rad_label, _rad_input = st.columns([.5, 1],
+                                                    vertical_alignment="center")
+                _rad_label.markdown(
+                    "<div class='pricing-control-label'>📏 附近比較半徑 (公尺)</div>",
+                    unsafe_allow_html=True)
+                with _rad_input:
+                    radius = st.slider("附近比較半徑 (公尺)", 500, 2000, 1000, step=100,
+                                       key="cmp_radius", label_visibility="collapsed")
+    st.markdown('<h2 class="pricing-section-title">1. 同業比價</h2>',
+                unsafe_allow_html=True)
+bid = _opt_lab[_sel3]
+B = MY[MY["id"] == bid].iloc[0]
+_blat, _blon = float(B["latitude"]), float(B["longitude"])
 
 # ══════════════════════════════════════════════════════════════
 # TB2 房源詳情(大分數 + LIME Top3 + 建議 + 趨勢線)
@@ -294,31 +399,76 @@ _opt_lab = {f"#{int(r['id'])}|{str(r['name'])[:26]}|"
 
 
 with TB2:
-    _sel = st.selectbox("選擇房源", list(_opt_lab.keys()))
+    _sel = st.selectbox("選擇房源", list(_opt_lab.keys()), key="risk_sel")
     sel_id = _opt_lab[_sel]
     R = MY[MY["id"] == sel_id].iloc[0]
     ROW = DS_IDX.loc[sel_id] if sel_id in DS_IDX.index else None
 
+    # ── 基準值(OOF 誠實預測):與總覽/下拉/通知中心口徑一致 ──
+    _vac0 = float(R["vac_pred"])
+    _prob0 = float(R[PROB_COL])
+    _tier0 = R[TIER_COL]
+    _variant = R.get("variant", "full")
+
+    # ── What-if 現值 ──
+    # LIME 區塊排在 What-if 控制項「上方」,但要用到滑桿的當前值,因此改以
+    # session_state key 綁定 widget:本次 rerun 開頭先讀值給 LIME,滑桿本身
+    # 仍渲染在下方左欄;任何拖動都會觸發 rerun,上方 LIME 隨即同步。
+    _price0 = float(R["price"])
+    _mn_now = pd.to_numeric(R["minimum_nights"], errors="coerce")
+    _mn0 = 1 if pd.isna(_mn_now) else int(np.clip(_mn_now, 1, 30))
+    _k_price, _k_mn = f"wi_price_{sel_id}", f"wi_mn_{sel_id}"
+    st.session_state.setdefault(_k_price, int(np.clip(_price0, 500, 50000)))
+    st.session_state.setdefault(_k_mn, _mn0)
+    if ROW is not None:
+        _np_ = int(st.session_state[_k_price])
+        _nm = int(st.session_state[_k_mn])
+        _changed = (abs(_np_ - _price0) > 1) or (_nm != _mn0)
+    else:
+        _np_, _nm, _changed = _price0, _mn0, False
+
+    # ── LIME 原因 Top 3(全寬置頂) ──
+    numbered_section_title(1, "LIME 原因 TOP3", "為什麼有風險")
+    mb("LIME 局部線性近似 · 解釋模型 B 的 P(空屋率≥60%) · 正值=推高風險")
+    if ROW is None:
+        st.info("此房源不在訓練協定內(經營未滿一年),無法提供 LIME 解釋。")
+        _lime_up = []
+    else:
+        try:
+            from modules.lime_explainer import lime_reasons
+            _ov = {"price": _np_, "minimum_nights": _nm}
+            _lime = lime_reasons(ROW, _variant, ALGO, overrides=_ov, k=3)
+            _lime_up = [x for x in _lime if x["direction"] == "up"][:3]
+            _lime_dn = [x for x in _lime if x["direction"] == "down"][:2]
+            _mx = max((abs(x["weight_pp"]) for x in _lime), default=1) or 1
+            for i, x in enumerate(_lime_up, 1):
+                _w = abs(x["weight_pp"]) / _mx * 100
+                st.markdown(
+                    f"<div style='margin:8px 0;'>"
+                    f"<div style='font-size:.85rem;font-weight:700;'>"
+                    f"{i}. {x['zh']}"
+                    f"<span style='color:{P['high']};float:right;'>"
+                    f"+{x['weight_pp']:.1f} pp</span></div>"
+                    f"<div style='background:{P['tag_bg']};border-radius:6px;"
+                    f"height:10px;margin-top:3px;'>"
+                    f"<div style='width:{_w:.0f}%;background:{P['high']};"
+                    f"height:10px;border-radius:6px;'></div></div></div>",
+                    unsafe_allow_html=True)
+            if _lime_dn:
+                note("✅ 加分項:" + "; ".join(
+                    f"{x['zh']}({x['weight_pp']:.1f}pp)" for x in _lime_dn))
+        except ImportError:
+            st.warning("尚未安裝 lime 套件:pip install lime")
+            _lime_up = []
+
     cA, cB = st.columns([1, 1.5], gap="large")
     with cA:
-        # ── 基準值(OOF 誠實預測):與總覽/下拉/通知中心口徑一致 ──
-        _vac0 = float(R["vac_pred"])
-        _prob0 = float(R[PROB_COL])
-        _tier0 = R[TIER_COL]
-        _variant = R.get("variant", "full")
-
         # ── What-if 控制項(先操作、再看結果) ──
-        _price0 = float(R["price"])
-        _mn_now = pd.to_numeric(R["minimum_nights"], errors="coerce")
-        _mn0 = 1 if pd.isna(_mn_now) else int(np.clip(_mn_now, 1, 30))
         if ROW is not None:
-            sec("⚡ What-if 模擬(拖動後上方風險環即時重算)")
-            _np_ = st.slider("每晚房價 (NT$)", 500, 50000,
-                             int(np.clip(_price0, 500, 50000)), 100)
-            _nm = st.number_input("最低入住天數(晚)", 1, 30, _mn0)
-            _changed = (abs(_np_ - _price0) > 1) or (_nm != _mn0)
-        else:
-            _np_, _nm, _changed = _price0, _mn0, False
+            numbered_section_title(
+                2, "WHAT-IF 模擬", "拖動後下方風險環與上方 LIME 即時重算")
+            st.slider("每晚房價 (NT$)", 500, 50000, step=100, key=_k_price)
+            st.number_input("最低入住天數(晚)", 1, 30, key=_k_mn)
 
         # ── 依是否調整,決定環要顯示「基準」或「模擬後」 ──
         if _changed:
@@ -376,41 +526,7 @@ with TB2:
                  "見右側 LIME 原因與改善建議。可試更大幅度調整觀察階梯跳動。")
 
     with cB:
-        sec("LIME 原因 Top 3(為什麼有風險)")
-        mb("LIME 局部線性近似 · 解釋模型 B 的 P(空屋率≥60%) · 正值=推高風險")
-        if ROW is None:
-            st.info("此房源不在訓練協定內(經營未滿一年),無法提供 LIME 解釋。")
-            _lime_up = []
-        else:
-            try:
-                from modules.lime_explainer import lime_reasons
-                _ov = {"price": _np_, "minimum_nights": _nm}
-                _lime = lime_reasons(ROW, _variant, ALGO,
-                                     overrides=_ov, k=3)
-                _lime_up = [x for x in _lime if x["direction"] == "up"][:3]
-                _lime_dn = [x for x in _lime if x["direction"] == "down"][:2]
-                _mx = max((abs(x["weight_pp"]) for x in _lime), default=1) or 1
-                for i, x in enumerate(_lime_up, 1):
-                    _w = abs(x["weight_pp"]) / _mx * 100
-                    st.markdown(
-                        f"<div style='margin:8px 0;'>"
-                        f"<div style='font-size:.85rem;font-weight:700;'>"
-                        f"{i}. {x['zh']}"
-                        f"<span style='color:{P['high']};float:right;'>"
-                        f"+{x['weight_pp']:.1f} pp</span></div>"
-                        f"<div style='background:{P['tag_bg']};border-radius:6px;"
-                        f"height:10px;margin-top:3px;'>"
-                        f"<div style='width:{_w:.0f}%;background:{P['high']};"
-                        f"height:10px;border-radius:6px;'></div></div></div>",
-                        unsafe_allow_html=True)
-                if _lime_dn:
-                    note("✅ 加分項:" + "; ".join(
-                        f"{x['zh']}({x['weight_pp']:.1f}pp)" for x in _lime_dn))
-            except ImportError:
-                st.warning("尚未安裝 lime 套件:pip install lime")
-                _lime_up = []
-
-        sec("💡 改善建議")
+        numbered_section_title(3, "改善建議")
         _cs = None
         try:
             _cap = max(float(R["accommodates"] or 2), 1)
@@ -511,71 +627,13 @@ with TB2:
                 note(f"<b>{i}. {s['title']}</b>:{s['detail']}"
                      f"<br><span style='font-size:.72rem;'>依據:{s['evidence']}</span>")
 
-    # ── 趨勢線(價格 What-if 模擬 × 真實市場對照) ──
-    if ROW is not None:
-        sec("趨勢線:價格 What-if 模擬 × 真實市場對照(非歷史時序)")
-        _lo = max(500, int(float(R["price"]) * .5))
-        _hi = int(float(R["price"]) * 1.8) + 500
-        _xs = np.linspace(_lo, _hi, 15)
-        _sims = [simulate_price_change(ROW, BUNDLE, float(p), algo=ALGO)
-                 for p in _xs]
-        _ys = [s["risk_score"] * 100 for s in _sims]
-        _ps = [s["notify_prob"] * 100 for s in _sims]
-
-        # 真實數據對照:同區同房型房源在各價格帶的「實際」平均空屋率
-        _peer = DS[(DS["neighbourhood_code"] == ROW["neighbourhood_code"]) &
-                   (DS["room_type_code"] == ROW["room_type_code"])]
-        _emp_x, _emp_y, _emp_n = [], [], []
-        if len(_peer) >= 20:
-            _edges = np.linspace(_lo, _hi, 9)
-            for _a, _b_ in zip(_edges[:-1], _edges[1:]):
-                _g = _peer[(_peer["price"] >= _a) & (_peer["price"] < _b_)]
-                if len(_g) >= 5:  # 每帶至少 5 筆真實樣本才畫
-                    _emp_x.append((_a + _b_) / 2)
-                    _emp_y.append(_g["Y_vacancy"].mean() * 100)
-                    _emp_n.append(len(_g))
-
-        _figT = go.Figure()
-        _figT.add_trace(go.Scatter(x=_xs, y=_ys, mode="lines+markers",
-                                   line=dict(color=P["primary"], width=3),
-                                   name="模型預測空屋率(What-if)"))
-        _figT.add_trace(go.Scatter(x=_xs, y=_ps, mode="lines",
-                                   line=dict(color=P["medium"], width=2,
-                                             dash="dash"),
-                                   name="P(高風險) 機率"))
-        if _emp_x:
-            _figT.add_trace(go.Scatter(
-                x=_emp_x, y=_emp_y, mode="markers+lines",
-                line=dict(color=P["accent"], width=2, dash="dot"),
-                marker=dict(size=[max(8, min(20, n / 2)) for n in _emp_n],
-                            symbol="diamond"),
-                name=f"真實市場:同區同房型實際空屋率(n={sum(_emp_n)})",
-                hovertext=[f"價格帶均值·{n} 筆真實房源" for n in _emp_n]))
-        _figT.add_vline(x=float(R["price"]), line_dash="dot",
-                        line_color=P["accent"],
-                        annotation_text=f"目前 ${float(R['price']):,.0f}")
-        _figT.add_hline(y=60, line_dash="dot", line_color=P["high"],
-                        annotation_text="60% 高風險線")
-        apply_theme(_figT, h=320).update_layout(
-            xaxis_title="每晚房價 (NT$)", yaxis_title="空屋率 / 機率 (%)")
-        st.plotly_chart(_figT, use_container_width=True)
-        st.caption("藍線 = 模型對「調價後」的 What-if 預測(price_pctl 已依同區同房型真實價格分佈"
-                   "動態重排);菱形虛線 = **真實市場數據**:同區同房型房源在各價格帶的實際平均空屋率"
-                   "(菱形越大樣本越多)。兩者趨勢一致代表模擬可信;樹模型對價格呈階梯狀反應屬正常。")
-
 # ══════════════════════════════════════════════════════════════
 # TB3 附近比較(熱力圖 + 風險比較 + 同商圈排名 + 跨平台)
 # ══════════════════════════════════════════════════════════════
 with TB3:
-    _sel3 = st.selectbox("基準房源", list(_opt_lab.keys()), key="nb_sel")
-    bid = _opt_lab[_sel3]
-    B = MY[MY["id"] == bid].iloc[0]
-    _blat, _blon = float(B["latitude"]), float(B["longitude"])
-
+    # 選擇房源與比較半徑已於頁首渲染(見 _opt_lab 之後的 TB2P 區塊)
     # ── 跨平台定價落點(主打:Airbnb 後台看不到的資訊)──
-    sec(f"跨平台定價落點({radius}m 內 · 591 / Booking / 租租網 / Airbnb)")
-    mb("月租平台掛牌價 ÷30 換算為每晚等效價,再除以可住人數 —— "
-       "統一為「每人每晚」才能跨平台比較(未計押金、管理費與最短租期)")
+    # 依使用者指示不再顯示區塊標題與換算方式說明,畫面直接進入左右雙欄。
     try:
         _cs0 = comp_index().stats(
             _blat, _blon,
@@ -583,102 +641,99 @@ with TB3:
             bracket=capacity_bracket(B["accommodates"]),
             radius_m=float(radius), exclude_listing_id=int(bid))
         _my_pp = float(B["price"]) / max(float(B["accommodates"]), 1)
-        _pc = st.columns(5)
-        with _pc[0]:
-            # 指標 + hover 摘要 + 查看詳情,收在同一個區塊內
-            with st.container(border=True):
-                st.metric("我的每人每晚", f"${_my_pp:,.0f}",
-                          f"每晚 ${float(B['price']):,.0f}", delta_color="off")
-                from modules import listing_detail as LD
-                _BD = DF_RAW[DF_RAW["id"] == int(bid)]
-                if len(_BD):
-                    _BD = _BD.iloc[0]
-                    # 滑鼠停留顯示摘要;完整內容(與租客入口同一個彈窗)由按鈕開啟
-                    st.markdown(LD.HOVER_CSS + LD.hover_card_html(
-                        _BD, extra_lines=[
-                            f"📊 每人每晚 <b>${_my_pp:,.0f}</b>"
-                            f"(可住 {int(float(B['accommodates']))} 人)"]),
-                        unsafe_allow_html=True)
-                    if st.button("🔍 查看詳情", key=f"detail_price_{bid}",
-                                 width="stretch"):
-                        # 房東視角不需要「立即租房 / 加入收藏」(那是租客動作)
-                        LD.open_detail(_BD, show_actions=False)
-        # 四個平台卡:與「我的每人每晚」相同的互動(hover 摘要 + 查看詳情)
+        from modules import listing_detail as LD
         from modules import platform_detail as PD
         _allc = _cs0.get("competitors")
-        for _i, _pl in enumerate(["Airbnb", "Booking", "591", "ddroom"], start=1):
-            _v = _cs0["platforms"].get(_pl)
-            _sub = (_allc[_allc["platform"] == _pl]
-                    if _allc is not None and len(_allc) else pd.DataFrame())
-            with _pc[_i]:
-                with st.container(border=True):
-                    st.metric(PD.label(_pl),
-                              f"{_v['count']} 筆" if _v else "0 筆",
-                              f"中位 ${_v['pp_median']:,.0f}" if _v else None,
-                              delta_color="off")
-                    st.markdown(PD.hover_card_html(_pl, _sub, radius, _my_pp),
-                                unsafe_allow_html=True)
-                    if st.button("🔍 查看詳情", key=f"pf_{_pl}_{bid}",
-                                 width="stretch"):
-                        PD.open_platform(_pl, _sub, radius, _my_pp)
+        _plats = []
+        for _pl in ["Airbnb", "Booking", "591", "ddroom"]:
+            _plats.append((_pl, _cs0["platforms"].get(_pl),
+                           _allc[_allc["platform"] == _pl]
+                           if _allc is not None and len(_allc) else pd.DataFrame()))
+        # 左「房源」右「跨平台價格」雙欄:左欄是固定高 HTML 區塊(--pricing-h)
+        # ＋一顆「查看完整詳情」;右欄是錨點列 ＋ 2×2 的「卡片＋該平台按鈕」。
+        # 樣式見 ui_components 的 .pricing-* / .pf-*;--pricing-h 尚未依新版
+        # 右欄高度重新量測校正,兩欄底部目前不保證切齊。
+        _c_photo, _c_price = st.columns([1.02, .98], gap="medium")
+        with _c_photo:
+            _BD = DF_RAW[DF_RAW["id"] == int(bid)]
+            _BD = _BD.iloc[0] if len(_BD) else None
+            _purl = str((_BD.get("picture_url", "") if _BD is not None else "") or "")
+            _pimg = (
+                f'<img class="pricing-photo" src="{_html.escape(_purl, quote=True)}" '
+                f'alt="房源封面照片" loading="lazy" referrerpolicy="no-referrer">'
+                if _purl.startswith("http") else
+                '<div class="pricing-photo pricing-photo-empty">暫無房源照片</div>')
+            st.markdown(
+                f'<div class="pricing-pane pricing-left">{_pimg}'
+                f'{LD.summary_html(_BD, show_name=False) if _BD is not None else ""}'
+                f'</div>', unsafe_allow_html=True)
+            if _BD is None:
+                st.caption("此房源的詳細資料暫時無法載入。")
+            elif st.button("查看完整詳情", key=f"detail_price_{bid}",
+                           width="stretch"):
+                # 房東視角不需要「立即租房 / 加入收藏」(那是租客動作)
+                LD.open_detail(_BD, show_actions=False)
+        with _c_price:
+            # hover 樣式由 listing_detail 提供,整段只需注入一次
+            st.markdown(LD.HOVER_CSS + f"""
+<div class="pricing-anchor">
+  <span class="pricing-anchor-label">我的每人每晚</span>
+  <span class="pricing-anchor-value">${_my_pp:,.0f}</span>
+  <span class="pricing-anchor-sub">每晚 ${float(B['price']):,.0f} ·
+    可住 {int(float(B['accommodates']))} 人</span>
+</div>""", unsafe_allow_html=True)
+            # 每個平台自成一格(卡片 + 該平台的查詢按鈕),2×2 排列。
+            # Streamlit 按鈕無法寫進 st.markdown 的 HTML,只能緊接在卡片下方。
+            for _row in (_plats[:2], _plats[2:]):
+                for _col, (_pl, _v, _sub) in zip(
+                        st.columns(2, gap="small"), _row):
+                    with _col:
+                        st.markdown(
+                            platform_card_html(_pl, _v, _sub, _my_pp, radius),
+                            unsafe_allow_html=True)
+                        if st.button(f"🔍 {PD.label(_pl)}",
+                                     key=f"pf_{_pl}_{bid}", width="stretch"):
+                            PD.open_platform(_pl, _sub, radius, _my_pp)
+        # ── 定價建議(單一區塊,三點:競品概況 → 價格落點 → 設施缺口) ──
+        # 原本散在雙欄下方與分頁最末的三段說明,依使用者指示合併於此。
+        st.markdown('<h2 class="pricing-section-title">2. 定價建議</h2>',
+                    unsafe_allow_html=True)
+        _pts = []
+
+        # 1) 跨平台競品概況
+        _pl_txt = " · ".join(
+            f"{p} {v['count']} 筆(每人每晚中位 ${v['pp_median']:,.0f})"
+            for p, v in _cs0["platforms"].items())
+        _pts.append(f"<b>跨平台競品({radius}m)</b>:{_pl_txt or '無'}")
+
+        # 2) 價格落點
         _pp0 = _cs0.get("pp_percentile")
+        _brk = B['bracket'] if 'bracket' in B else capacity_bracket(B['accommodates'])
         if _pp0 is not None:
             _pcol = (P["high"] if _pp0 >= .6 else
                      (P["medium"] if _pp0 >= .4 else P["low"]))
-            note(f"同容量層({B['bracket'] if 'bracket' in B else capacity_bracket(B['accommodates'])})"
-                 f"共 {_cs0['n_same_bracket']} 筆競品,你的每人每晚 "
-                 f"<b style='color:{_pcol}'>貴於 {_pp0:.0%}</b>,"
-                 f"同層中位為 <b>${_cs0['bracket_pp_median']:,.0f}</b>。")
+            _pts.append(
+                f"<b>價格落點</b>:同容量層({_brk})共 {_cs0['n_same_bracket']} 筆競品,"
+                f"你的每人每晚 <b style='color:{_pcol}'>貴於 {_pp0:.0%}</b>,"
+                f"同層中位為 <b>${_cs0['bracket_pp_median']:,.0f}</b>"
+                f"(月租÷30 換算)。")
         else:
-            note(f"同容量層競品不足 5 筆,暫不計算價格落點。")
+            _pts.append("<b>價格落點</b>:同容量層競品不足 5 筆,暫不計算。")
 
-        # 設施缺口(跨平台競品過半具備、本房源沒有)
+        # 3) 設施缺口(跨平台競品過半具備、本房源沒有)
         _own0 = _canon_amenities(str(B.get("amenities", "")))
         _gap0 = [(k, v) for k, v in _cs0.get("amenity_coverage", {}).items()
                  if v >= .5 and k not in _own0][:4]
         if _gap0:
-            note("設施缺口:" + "、".join(
+            _pts.append("<b>設施缺口</b>:" + "、".join(
                 f"<b>{k}</b>(周邊 {v:.0%} 具備)" for k, v in _gap0)
-                + " —— 這些是同商圈的標配。")
+                + " —— 這些是同商圈的標配,建議優先補齊。")
+        else:
+            _pts.append("<b>設施缺口</b>:周邊過半競品具備的設施你都有,無明顯缺口。")
+
+        note("<br>".join(f"{i}. {t}" for i, t in enumerate(_pts, 1)))
     except FileNotFoundError:
         st.caption("競品索引未建置,請執行 scripts/train_backend_models.py。")
-
-    # ── 同商圈同房型的真實已訂率基準 ──
-    sec("同商圈同房型 真實已訂率基準")
-    mb("取自 Inside Airbnb 日曆的實際訂房狀態,非模型推估")
-    _peer = PREDS[(PREDS["neighbourhood_cleansed"] == B["neighbourhood_cleansed"])
-                  & (PREDS["room_type"] == B["room_type"])]
-    _peer = _peer[_peer["booked_rate_d90"].notna()]
-    if len(_peer) >= 10:
-        _b1, _b2, _b3, _b4 = st.columns(4)
-        _mine90 = B.get("booked_rate_d90")
-        _mine30 = B.get("booked_rate_d30")
-        _b1.metric("我的 90 天訂房率",
-                   "—" if pd.isna(_mine90) else f"{_mine90:.0%}")
-        _b2.metric("同商圈同房型中位",
-                   f"{_peer['booked_rate_d90'].median():.0%}",
-                   f"{len(_peer)} 間", delta_color="off")
-        if pd.notna(_mine90):
-            _rank = float((_peer["booked_rate_d90"] < _mine90).mean())
-            _b3.metric("我的排名", f"贏過 {_rank:.0%}",
-                       "同商圈同房型", delta_color="off")
-        _b4.metric("我的 30 天訂房率",
-                   "—" if pd.isna(_mine30) else f"{_mine30:.0%}")
-        _figB = px.histogram(_peer, x="booked_rate_d90", nbins=20,
-                             color_discrete_sequence=[P["primary"]],
-                             labels={"booked_rate_d90": "未來 90 天訂房率"})
-        if pd.notna(_mine90):
-            _figB.add_vline(x=float(_mine90), line_dash="dot",
-                            line_color=P["high"], annotation_text="我的位置")
-        apply_theme(_figB, h=260).update_layout(
-            title=f"{B['neighbourhood_cleansed']}·"
-                  f"{ROOM_JP.get(B['room_type'], B['room_type'])} 訂房率分佈",
-            yaxis_title="房源數")
-        st.plotly_chart(_figB, width="stretch")
-    else:
-        st.caption("同商圈同房型樣本不足 10 間,不建立基準。")
-
-    st.divider()
 
     # 附近 Airbnb(半徑內)
     _d = PREDS.copy()
@@ -689,21 +744,25 @@ with TB3:
     NB = _d[(_d["dist_m"] <= radius)].sort_values("dist_m")
     NB_o = NB[NB["id"] != bid]
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(f"{radius}m 內 Airbnb", f"{len(NB_o)} 間")
-    c2.metric("周邊高風險機率中位", f"{NB_o[PROB_COL].median()*100:.0f}%"
-              if len(NB_o) else "—")
     _pctl_rk = float((NB_o[PROB_COL] < float(B[PROB_COL])).mean()) \
         if len(NB_o) else None
-    c3.metric("我的高風險機率 vs 周邊",
-              f"{B[PROB_COL]*100:.0f}%",
-              f"高於 {_pctl_rk:.0%} 的鄰居" if _pctl_rk is not None else None,
-              delta_color="off")
     _rank = (int((NB[PROB_COL] < float(B[PROB_COL])).sum()) + 1) \
         if len(NB) else 1
-    c4.metric("同商圈排名(低風險優先)", f"第 {_rank} / {len(NB)} 名")
+    _pricing_kpis = [
+        (f"{radius}m 內 Airbnb", f"{len(NB_o)} 間", None),
+        ("周邊高風險機率中位",
+         f"{NB_o[PROB_COL].median()*100:.0f}%" if len(NB_o) else "—", None),
+        ("我的高風險機率 vs 周邊", f"{B[PROB_COL]*100:.0f}%",
+         f"↑ 高於 {_pctl_rk:.0%} 的鄰居" if _pctl_rk is not None else None),
+        ("同商圈排名(低風險優先)", f"第 {_rank} / {len(NB)} 名", None),
+    ]
+    for _kpi_col, (_kpi_label, _kpi_value, _kpi_note) in zip(
+            st.columns(4, gap="small"), _pricing_kpis):
+        with _kpi_col:
+            overview_metric_card(_kpi_label, _kpi_value, _kpi_note)
 
-    sec("周邊房源分佈圖")
+    st.markdown('<h2 class="pricing-section-title">3. 周邊房源分布圖</h2>',
+                unsafe_allow_html=True)
     mb("點位顏色 = 預測空屋率(綠 <40%・黃 40–69%・紅 ≥70%)· "
        "虛線圓為比對半徑 · 閃爍點為本房源 · 滑過任一點會同步標示右側列表")
     from modules.geo_utils import nearest_address as _addr_fn
@@ -719,59 +778,6 @@ with TB3:
     MV.render(own=B, nearby=NB_o.head(180), comp=_xc,
               radius_m=radius, addr_fn=_addr_fn, height=520)
     st.caption("跨平台圖層可於地圖右上角分別勾選;點擊列表項目會將地圖移至該房源。")
-
-    st.divider()
-    _mcol, _rcol = st.columns([1.5, 1], gap="medium")
-    with _mcol:
-        sec("同商圈風險分佈")
-        _figS = px.scatter(
-            NB.assign(空屋率=(NB["vac_pred"] * 100).round(0)),
-            x="price", y="vac_pred", color="vac_pred", size="accommodates",
-            color_continuous_scale=["#5B9E73", "#F7D774", "#C4645A"],
-            labels={"price": "每晚價格 (NT$)", "vac_pred": "預測空屋率",
-                    "accommodates": "可住人數"},
-            hover_data={"id": True, "空屋率": True, "price": ":,.0f"})
-        _figS.add_vline(x=float(B["price"]), line_dash="dot",
-                        line_color="#2A2A2A", annotation_text="本房源定價")
-        apply_theme(_figS, h=430).update_layout(
-            coloraxis_colorbar_title="空屋率")
-        st.plotly_chart(_figS, width="stretch")
-    with _rcol:
-        sec("同商圈排名表(依高風險機率,低者優先)")
-        if len(NB):
-            _tb = NB.head(60)[["id", "name", "price", "vac_pred",
-                               PROB_COL, TIER_COL, "dist_m"]].copy()
-            _tb["房源"] = _tb.apply(
-                lambda r: ("👉 " if int(r["id"]) == bid else "")
-                + f"#{int(r['id'])} {str(r['name'])[:12]}", axis=1)
-            _tb["每晚"] = _tb["price"].map("${:,.0f}".format)
-            _tb["機率"] = _tb[PROB_COL].map("{:.0%}".format)
-            _tb["空屋率"] = _tb["vac_pred"].map("{:.0%}".format)
-            _tb["等級"] = _tb[TIER_COL].map(lambda t: TIER_ZH[t][0])
-            _tb["距離"] = _tb["dist_m"].map("{:.0f}m".format)
-            _tb = _tb.sort_values(PROB_COL)
-            html_table(_tb[["房源", "每晚", "機率", "等級", "空屋率", "距離"]],
-                       height=470)
-        else:
-            st.info("半徑內無其他房源。")
-
-    # (跨平台落點已移至本分頁最上方)
-    try:
-        _cs3 = comp_index().stats(
-            _blat, _blon,
-            listing_pp_day=float(B["price"]) / max(float(B["accommodates"]), 1),
-            bracket=capacity_bracket(B["accommodates"]),
-            radius_m=float(radius), exclude_listing_id=int(bid))
-        _pl_txt = " · ".join(
-            f"{p} {v['count']} 筆(每人每晚中位 ${v['pp_median']:,.0f})"
-            for p, v in _cs3["platforms"].items())
-        _pp = _cs3.get("pp_percentile")
-        note(f"🌐 <b>跨平台競品({radius}m)</b>:{_pl_txt or '無'}"
-             + (f"<br>價格落點:同容量層每人每晚貴於 <b>{_pp:.0%}</b> 的競品"
-                f"(月租÷30 換算,樣本 {_cs3['n_same_bracket']} 筆)"
-                if _pp is not None else ""))
-    except FileNotFoundError:
-        pass
 
 # ══════════════════════════════════════════════════════════════
 # TB5 未來檔期(calendar.csv.gz · 獨立模組,不影響既有分頁)
