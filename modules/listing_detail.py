@@ -72,22 +72,14 @@ def summary_html(L, show_name: bool = True) -> str:
     addr = nearest_address(lat, lon)
     hood = L.get("neighbourhood", "")
     hood = str(hood) if pd.notna(hood) else ""
-<<<<<<< HEAD
     name = (f'<div style="font-size:var(--sa-text-card-title);font-weight:700;color:{P["ink"]};'
-=======
-    name = (f'<div style="font-size:1.05rem;font-weight:700;color:{P["ink"]};'
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
             f'margin-bottom:6px;">{_html.escape(str(L["name"]))}</div>'
             if show_name else "")
     # 注意:回傳字串不可有縮排或空行 —— 內嵌到其他 HTML 區塊時,
     # 縮排 4 個空白會被 Markdown 當成程式碼區塊而把原始碼直接印出來。
     return (
         f'{name}'
-<<<<<<< HEAD
         f'<div style="font-size:var(--sa-text-caption);color:{P["muted"]};line-height:1.9;">'
-=======
-        f'<div style="font-size:.8rem;color:{P["muted"]};line-height:1.9;">'
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
         f'📍 <b>區域位置：</b>{L.get("neighbourhood_cleansed", "")}'
         f'{("｜" + hood) if hood else ""}<br>'
         f'🏠 <b>推估地址：</b>{addr or "—"}<br>'
@@ -95,11 +87,7 @@ def summary_html(L, show_name: bool = True) -> str:
         f'🛏 {room_zh} ｜ 👥 可住 {_gi(L.get("accommodates"))} 人 ｜ '
         f'🛁 {_gi(L.get("bathrooms_count"))} 衛浴 ｜ '
         f'🛏 {_gi(L.get("beds"))} 床<br>'
-<<<<<<< HEAD
         f'💰 <b style="color:{P["tenant"]};font-size:var(--sa-text-card-title);">'
-=======
-        f'💰 <b style="color:{P["tenant"]};font-size:1.05rem;">'
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
         f'${float(L["price"]):,.0f}</b> / 晚 ｜ ⭐ {rating_s} ｜ '
         f'💬 {_gi(L.get("number_of_reviews"))} 則評論'
         f'</div>')

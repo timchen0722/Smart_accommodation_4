@@ -19,15 +19,11 @@
 - 模型與解釋：LightGBM、XGBoost、scikit-learn、SHAP、LIME、Joblib；既有模型檔與套件版本有相依性，請勿任意升級或替換。
 - 狀態與資料來源：以 Streamlit session/cache、CSV／Parquet 與本地模型產物為主；目前不是以資料庫作為主要應用狀態來源。
 - 程式風格：Python 使用 `snake_case`、清楚的函式命名與適量型別標註；共用邏輯應放入 `modules/`，頁面檔以流程編排與呈現為主。
-<<<<<<< HEAD
 - UI 設計系統（2026-07-24 整理完成）：色彩、字級、間距、圓角、陰影、斷點、風險等級文案的**唯一來源是 `modules/design_tokens.py`**（純資料、無 Streamlit 依賴、可 pytest）；共用元件在 `modules/ui_kit.py`（PageHeader／SectionHeader／StatCard／RiskBadge／FilterGroup／DataTable／Primary+SecondaryButton／EmptyState／Loading／model_spec）。`modules/ui_components.py` 退為相容門面，re-export 這些元件，既有 import 不必改。
 - UI 硬編碼禁令：頁面與模組**不得再出現字面色碼、字級、圓角**。CSS 情境用 `var(--sa-*)`（由 `design_tokens.css_variables()` 注入）；**Plotly／離線 HTML／iframe 情境必須改用 Python 端的 token 值**（`T.COLOR[...]`、`T.tier_color()`），因為它們吃不到 CSS 變數。這兩條各有測試把關（`test_ui_consistency.py`）。
 - UI 文案：以繁體中文為主，沿用既有日系簡約、低彩度設計。風險三層一律「🔴 高風險／🟡 觀察／🟢 安全」，租客五科分數帶一律用規則書 v1.0 的四級（優先查看／值得考慮／普通／建議多比較）——兩者都只有一份定義，改文案只改 `design_tokens.py`。
 - UI 按鈕分級：每個區塊至多一顆 `ui_kit.primary_button`（送出／批次發送／產生報告），其餘一律 `secondary_button`；寬度用 `stretch=True`，不要再寫 `use_container_width`。
 - 原生標籤的 CSS 權重：Streamlit 對 `h1`/`p` 有自己的樣式（權重 0,1,1），單一 class 選擇器會被蓋掉。`ui_kit` 的 PageHeader 因此寫成 `.sa-page-header .sa-page-title`；若日後新增會渲染成原生標籤的元件，記得比照辦理並用瀏覽器實測 computed style，**grep 原始碼驗不出這種錯**。
-=======
-- UI 文案：以繁體中文為主，沿用既有日系簡約、低彩度設計；共用色彩、字級、間距與卡片樣式集中維護於 `modules/ui_components.py`。
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
 - 共用元件：房源詳情應優先重用 `modules/listing_detail.py`；資料載入、模型推論、象限判定及地址推估不可在頁面內各自複製一套。
 - 地址限制：畫面中的「推估地址」由鄰近地標推算至道路層級，不是房源真實門牌，文案不得宣稱為精確地址。
 - 模型限制：風險分級、空房率、近 90 天實際未訂房率及行政區中位數差異是不同指標；調整前必須確認欄位定義與目前演算法選擇。
@@ -43,20 +39,15 @@
 - `pages/1_🏠_房東入口.py`：房東營運面板、帳號／房源篩選、房源卡與風險資訊。
 - `pages/2_🔍_租客入口.py`：租客端功能。
 - `pages/3_📊_後台分析.py`：平台後台分析。
-<<<<<<< HEAD
 - `modules/design_tokens.py`：**設計 token 唯一來源** —— 顏色／TINT／字級 9 階／間距／圓角／陰影／斷點／`RISK_TIERS`／`SCORE_BANDS`／`PLATFORM_COLOR`／`HERO`／`css_variables()`。
 - `modules/ui_kit.py`：共用元件庫（11 個元件 + `component_css()`）。
 - `modules/ui_components.py`：相容門面 —— 全域 CSS 注入與舊 API（`P`／`sec`／`html_table`…），並 re-export `ui_kit`。
-=======
-- `modules/ui_components.py`：全站共用 UI 樣式、設計 token 與元件。
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
 - `modules/data_loader.py`：資料載入與快取。
 - `modules/feature_engineering.py`：特徵處理、模型載入與預測。
 - `modules/quadrant.py`：模型預估與真實檔期的象限／營運狀態判定。
 - `modules/listing_detail.py`：共用房源詳情介面。
 - `modules/geo_utils.py`：離線行政區與推估地址邏輯。
 - `modules/calendar_analytics.py`、`modules/calendar_sections.py`：日曆與訂房檔期分析。
-<<<<<<< HEAD
 - `tests/`：171 案，涵蓋通知組合、平台分析邏輯、租客五科計分、風險管理 AppTest，以及設計系統的反迴歸守門（`test_design_tokens.py`／`test_ui_kit.py`／`test_ui_consistency.py`）。
 
 ## 📌 當前開發進度（最後更新：2026-07-24）
@@ -78,11 +69,6 @@
 - [ ] 階段 9 的 D8 選項②（嚴格套用六段結構到所有分析頁）未執行，僅補了風險管理的指標卡。
 
 ### 先前進度（2026-07-22 以前）
-=======
-- `tests/`：目前主要涵蓋通知組合與平台分析邏輯。
-
-## 📌 當前開發進度（最後更新：2026-07-22）
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
 
 - [x] 已建立 Streamlit v4 智慧旅宿空屋率風險預警平台，整合房東、租客與平台後台頁面。
 - [x] 平台後台分析已重組為五個營運分頁，並完成多項平台監管與營收分析調整。
@@ -93,14 +79,11 @@
 - [x] 房源卡差異文案改為兩行（「高於OO區中位數／空房率 N 百分比」），「90 天實際未訂房率」加上底色區塊；已用 Streamlit AppTest 以實際資料驗證 0 例外並確認輸出文字。
 - [/] 房源卡版面仍需以實際資料完成最終瀏覽器視覺驗收，確認不同照片比例、長房源名稱與窄螢幕不會破版。
 - [x] 房東入口側邊欄改版：帳號選單只顯示「房東名稱(ID)」（移除間數與紅點）；「風險分類模型」單選改為「行政區／房型」房源卡篩選；移除「附近比較半徑」滑桿。已用 AppTest 驗證 0 例外與篩選筆數。
-<<<<<<< HEAD
 - [x] 房源總表的「房源卡片（N 間）」改為大字級粗體區段標題；象限單選標籤改為「營運狀態」，並移至房源卡片標題正下方，篩選邏輯與動態間數不變。
 - [x] 房源總表的「營運狀態」篩選列改為桌面版標籤靠左、全部／各狀態選項同列靠右；窄螢幕維持自動換行，未修改篩選值與邏輯。
 - [x] 房源定價情報補上「1. 同業比價」標題；頁首控制列改與下方左右內容共用相同欄寬，並下移半徑滑桿使其對齊左側標籤中線。
 - [x] 房源定價情報補上「2. 定價建議」與「3. 周邊房源分布圖」標題，三個標題共用相同字級與字重；定價建議下方四張 KPI 卡改為等寬、等高。
 - [x] 未來檔期補上「1. 未來檔期總攬／2. 逐日訂房狀態／3. 空檔警示」，風險診斷補上「1. LIME 原因 TOP3／2. WHAT-IF 模擬／3. 改善建議」；六個主標題共用相同字級，括號說明保留原輔助字大小與顏色。
-=======
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
 - [x] 上一項連帶取消「房東帳號紅點是否隨模型即時重算」的待辦（紅點已不再顯示）。
 - [ ] 側邊欄已無模型切換入口，XGBoost 對照結果目前無法從畫面選用；若仍需對照，需另外規劃呈現位置。
 
@@ -115,7 +98,6 @@
 - 2026-07-22：側邊欄「風險分類模型」單選已移除，全站風險值固定使用 LightGBM 主力模型（`ALGO="lgbm"`、`PROB_COL="prob"`、`TIER_COL="tier"`）；`prob_xgb`／`tier_xgb` 欄位仍在資料中但畫面不再切換。
 - 2026-07-22：側邊欄「行政區／房型」篩選（key：`card_district`、`card_room`）採 `st.multiselect` 可複選、預設全選，與租客入口的尋房條件一致；房型以原始 `room_type` 為值、`ROOM_JP` 為顯示文字。此篩選在「房源總表」分頁一路作用到上方五張摘要卡、象限摘要表與房源卡（`SCOPE` 變數）；有篩選時摘要卡標題改為「篩選後房源」並以「N／總數」呈現，「需優先處理」同樣顯示「篩選後／全部」，另在卡片列上方以 caption 標示目前篩選條件，避免 81 間被誤讀成房東只有 N 間。2026-07-22 後續調整：篩選改為**全頁範圍**，`SCOPE` 於分頁建立前計算，房源定價情報、未來檔期、風險診斷、月報的「選擇房源／基準房源」下拉一律只列出 `SCOPE` 內房源（`_opt_lab` 由 `SCOPE` 產生）；依 id 反查明細仍用 `MY`，不影響單一房源分析。若篩選結果為空，頁面顯示提示並 `st.stop()`，不再進入分頁。四個分頁的下拉標籤統一為「選擇房源」（定價情報原本的「基準房源」已更名），選項只顯示房源名稱，不再帶 ID、風險等級與機率；名稱重複時才補「(ID …)」，名稱缺漏（NaN）則顯示「未命名房源 #ID」。
 - 2026-07-22：「附近比較半徑」滑桿先從側邊欄移除，之後改置於「房源定價情報」分頁頁首、「選擇房源」下拉右側（`st.columns([2.2, 1])`，key：`cmp_radius`，500–2000m、預設 1000）。該區塊在程式中刻意寫在其他分頁之前執行，讓 `radius` 在風險診斷的跨平台比較等處也取得同一個使用者設定值；跨平台掛牌統計、附近 Airbnb 家數、同商圈排名與地圖皆隨此值即時重算。
-<<<<<<< HEAD
 - 2026-07-23：後台分析「💰 營收與成長」分頁（`modules/portfolio_sections.py` 的 `render_portfolio_tab()`）依使用者附圖改為**精簡版 · 3 圖**：上方 5 張 KPI 卡（可分析房源／平均已訂率／房東年營收中位／平台預估年收入(中位)＝年營收中位×抽成率／最高獲利房型）→ ①房型獲利排行（水平長條，房型色沿用既有 `RTC` 保持跨分頁一致，未照附圖交換色）→ ②行政區×房型獲利熱力矩陣（Plotly `go.Heatmap`，含「房東端／平台端」切換，平台端＝年營收×抽成率，key `rev_heat_scope`）→ ③成長機會供需矩陣（`go.Heatmap`，三級狀態 缺口市場/觀察中/已飽和，色 綠#7FB98E／米黃#E3D5B0／灰#D8D3CB，格內顯示空屋率＋間數、hover 顯示完整明細）→ 底部長短租一句話結論（以 calendar 真實資料算短租≤3晚 vs 長租≥28晚已訂率，不另做圖）。**移除**原「投資散佈圖（價格×已訂率定位圖）」與「長短租組合圖（bar+line）」的呼叫。①②③ 均跟隨側欄「行政區／房型」篩選連動（①②來源為 calendar `_scoped_portfolio()`、③來源為預測母體 `guard_scope()`）。`render_tenure_strategy()` 保留於檔內但已無呼叫者（暫留，未刪）。**Plotly 地雷**：`go.Heatmap` 的 `customdata` 若同格混放字串與數值，numpy 會整體轉成字串型別、令 hovertemplate 的數值格式碼（`:.0%`、`:$,.0f`）失效——③ 的 customdata 已全部預格式化為字串處理。驗證：AppTest 無頭跑 0 例外（初始＋切平台端），KPI 數值與附圖一致（5,609 間／45%／$378,780／$56,817／整棟出租），既有 `tests/` 全數 20 passed。
 - 2026-07-23（視覺重整・接上一則）：依使用者反映「營收與成長配色排版不好看、區塊標題不明顯」，在 `portfolio_sections.py` 內**新增 scoped 標題元件**（不動全站 `.sec`）：`_sec3(num,title,tag,tone)` = 彩色序號徽章 + 粗體深色標題(`P['ink']` 1.08rem) + 語意 pill 膠囊;三段語調色 `SEC3_TONE`（破題=藍 `#EEF4FB`/現況=琥珀 `#F7F1E4`/行動=綠 `#EAF3EE`）。分頁主標改用 `_tab_title()`（1.34rem 粗體深色）取代原 muted 小灰 `sec()`。原因：`.sec` 是 0.71rem 全大寫 `P['muted']` 灰字、低對比,正是「不明顯」主因;UI 設計知識庫（Analytics Dashboard）指 `high-contrast` 為 must-have、Typography 走 Clear+Functional、且 anti-pattern 是 ornate,故走「高對比但不花俏」。其餘微調:圖2 熱力圖加 `xgap/ygap=3` 讓格子更清爽、移除區塊間生硬 `st.divider()` 改由標題自帶間距、圖3 說明改 `st.caption`。**只改本分頁,未動其他四頁與全站 `.sec`/`P` 色票/字體**。所有 HTML 皆 inline style 單行字串(無空行)。驗證:AppTest 0 例外(初始＋切平台端)、KPI 數值不變、新標題與 pill 標籤皆在、舊 `① 房型獲利排行` 格式已無殘留。
 - 2026-07-23（KPI 卡片一致化）：市場總覽與營收成長的頂部 KPI 列改用共用 `overview_metric_card()`，卡片固定高 112px，避免帶輔助說明的卡片比同列其他卡片更高；市場總覽的高風險 KPI 不再顯示「觀察層」比例；兩頁的「預估平台年收入」皆以後台紫色膠囊強調目前抽成率，且移除 `st.metric` 自帶的方向箭頭。樣式集中於 `modules/ui_components.py`，沒有改變指標計算口徑。驗證：完整 pytest 28 passed；Edge 實測桌面版兩列卡片及 390px 窄畫面皆為 112px、無溢位，觀察層文案不存在，紫色抽成標籤可見，console 0 errors。
@@ -127,8 +109,6 @@
 - 2026-07-23（房源定價情報同業比價對齊）：在控制列與左右內容之間新增 1.2rem／800 字重的「1. 同業比價」區段標題；控制列外層改用與內容列相同的 `[1.02, .98]` 欄寬及 `medium` 間距，讓房源選擇／半徑控制分別對齊下方房源資訊／同業價格欄；半徑標籤欄加寬並依瀏覽器實測將滑桿下移 8px，使軌道對齊文字中線。樣式限縮於 `.st-key-pricing-controls` 與 `.pricing-*`。驗證：Python 語法與 `git diff --check` 通過，正式 `tests/` 28 passed；桌機左右邊界與內容上下緣誤差皆 0px、滑桿中線誤差 0.013px，768px 附近安全換行，390px 無裁切或水平溢位，console 0 errors。
 - 2026-07-23（定價建議與周邊分布標題）：定價情報依閱讀順序補上「2. 定價建議」與「3. 周邊房源分布圖」，共用 `.pricing-section-title`，與「1. 同業比價」維持 1.2rem／800 字重。四張周邊 KPI 改用 `overview_metric_card` 與四等分欄，包含補充提示的第三張也固定等高。驗證：Python 語法與 `git diff --check` 通過，正式 `tests/` 28 passed；桌機／768px 四卡等高且上下緣一致，欄寬差僅 0.023px 次像素，390px 無裁切或水平溢位，console 0 errors。
 - 2026-07-23（檔期與風險診斷編號標題）：新增共用 `numbered_section_title()`，未來檔期依序顯示「1. 未來檔期總攬／2. 逐日訂房狀態／3. 空檔警示」，風險診斷依序顯示「1. LIME 原因 TOP3／2. WHAT-IF 模擬／3. 改善建議」。六個主標題皆為 1.2rem／800；空檔條件、LIME 用途與 WHAT-IF 即時重算等括號說明維持原 `.sec` 的 .71rem 灰色輔助字。未修改分析、模擬或建議邏輯。驗證：Python 語法與 `git diff --check` 通過，正式 `tests/` 79 passed；桌機／768px／390px 均無標題裁切或水平溢位，console 0 errors。
-=======
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
 - 2026-07-22：工作區存在模型比較報告、資料集、腳本與備份頁面等尚未提交檔案；接手前請先確認其來源與擁有者，勿擅自提交、覆寫或刪除。
 - `README.md` 的部分模型數字或舊版畫面說明可能尚未同步；涉及模型門檻、AUC 或指標定義時，以目前程式碼、模型產物與最新驗證報告交叉確認。
 

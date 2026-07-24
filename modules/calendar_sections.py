@@ -13,13 +13,9 @@ import streamlit as st
 
 from modules import calendar_analytics as ca
 from modules import listing_detail as LD
-<<<<<<< HEAD
 from modules import design_tokens as T
 from modules.ui_components import (P, apply_theme, html_table, mb, note,
                                    numbered_section_title, sec)
-=======
-from modules.ui_components import P, apply_theme, html_table, mb, note, sec
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
 
 DOW_ZH = ["一", "二", "三", "四", "五", "六", "日"]
 
@@ -28,16 +24,10 @@ DOW_ZH = ["一", "二", "三", "四", "五", "六", "日"]
 # (P["primary"] 的淡階)、空房退成背景米色 —— 藍越滿代表生意越好。
 # 刻意不用紅色:P["high"] 在全站代表「高風險、要處理」,留給下方的
 # 空檔警示,避免同一個紅在不同分頁有兩種意思。
-<<<<<<< HEAD
 # 這個藍是在「日期文字(ink)對比 ≥ 4.5」的前提下,與空房格辨識度最高的
 # 主色淡階(實測文字對比 6.06、兩格互比 2.08)。Plotly 吃不到 CSS 變數,
 # 故取 token 的 Python 值,不是 var(--sa-*)。
 CAL_BOOKED = T.CAL_BOOKED_BLUE       # 已訂 / 不可訂
-=======
-# #8AACCD 是在「日期文字(P['ink'])對比 ≥ 4.5」的前提下,與空房格
-# 辨識度最高的主色淡階(實測文字對比 6.06、兩格互比 2.08)。
-CAL_BOOKED = "#8AACCD"     # 已訂 / 不可訂
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
 CAL_OPEN = P["tag_bg"]     # 空房可訂
 
 # 表格數字欄:等寬數字 + 右對齊,讓上下列的位數對得起來
@@ -49,15 +39,9 @@ def _cal_legend() -> str:
     def _sw(c, label, border=""):
         return (f'<span style="display:inline-flex;align-items:center;'
                 f'gap:6px;margin-right:16px;">'
-<<<<<<< HEAD
                 f'<span style="width:13px;height:13px;border-radius:var(--sa-radius-bar);'
                 f'background:{c};{border}"></span>'
                 f'<span style="font-size:var(--sa-text-caption);color:{P["ink2"]};">{label}</span>'
-=======
-                f'<span style="width:13px;height:13px;border-radius:3px;'
-                f'background:{c};{border}"></span>'
-                f'<span style="font-size:.78rem;color:{P["ink2"]};">{label}</span>'
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
                 f'</span>')
     return ('<div style="margin:2px 0 8px;">'
             + _sw(CAL_BOOKED, "已訂／不可訂")
@@ -70,13 +54,8 @@ def _gap_badge(n: int) -> str:
     """空檔長度的等級 badge —— 與站內風險等級共用同一套色塊語言。"""
     c, t = ((P["high"], "長空檔") if n >= 21 else
             ((P["medium"], "中空檔") if n >= 10 else (P["low"], "短空檔")))
-<<<<<<< HEAD
     return (f'<span style="background:{c};color:#fff;border-radius:var(--sa-radius-sm);'
             f'padding:2px 10px;font-size:var(--sa-text-label);font-weight:700;'
-=======
-    return (f'<span style="background:{c};color:#fff;border-radius:10px;'
-            f'padding:2px 10px;font-size:.72rem;font-weight:700;'
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
             f'white-space:nowrap;">{t}</span>')
 
 
@@ -154,11 +133,7 @@ def render_calendar_tab(listing_id: int, listing_row, listings_df):
     room_type = listing_row["room_type"]
 
     # ── 總覽:左側房源照片、右側未來訂房率(仿「房源定價情報」作法) ──
-<<<<<<< HEAD
     numbered_section_title(1, "未來檔期總攬")
-=======
-    sec("未來檔期總覽")
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
     c_photo, c_kpi = st.columns([1.02, .98], gap="medium")
     with c_photo:
         _bd = listings_df[listings_df["id"] == int(listing_id)]
@@ -186,7 +161,6 @@ def render_calendar_tab(listing_id: int, listing_row, listings_df):
             _v90s = f"約 {round(float(_v90) * 90)} / 90 天已訂"
         st.markdown(
             f'<div style="background:{P["surface"]};border:1px solid {P["border"]};'
-<<<<<<< HEAD
             f'border-radius:var(--sa-radius-md);padding:14px 18px;margin-bottom:10px;'
             f'font-variant-numeric:tabular-nums;">'
             f'<div style="font-size:var(--sa-text-caption);color:{P["muted"]};'
@@ -195,15 +169,6 @@ def render_calendar_tab(listing_id: int, listing_row, listings_df):
             f'line-height:1.15;font-weight:800;'
             f'color:{_v90c};">{_v90t}</div>'
             f'<div style="font-size:var(--sa-text-caption);color:{P["ink2"]};">{_v90s}</div>'
-=======
-            f'border-radius:14px;padding:14px 18px;margin-bottom:10px;'
-            f'font-variant-numeric:tabular-nums;">'
-            f'<div style="font-size:.78rem;color:{P["muted"]};'
-            f'letter-spacing:.06em;">未來 90 天已訂率</div>'
-            f'<div style="font-size:2.6rem;line-height:1.15;font-weight:800;'
-            f'color:{_v90c};">{_v90t}</div>'
-            f'<div style="font-size:.78rem;color:{P["ink2"]};">{_v90s}</div>'
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
             f'</div>', unsafe_allow_html=True)
         k1 = st.columns(2)
         for i, (tag, lbl) in enumerate([("d30", "未來 30 天"),
@@ -220,11 +185,7 @@ def render_calendar_tab(listing_id: int, listing_row, listings_df):
     st.divider()
 
     # ── 細節:逐日訂房狀態(分月月曆) ──
-<<<<<<< HEAD
     numbered_section_title(2, "逐日訂房狀態")
-=======
-    sec("逐日訂房狀態")
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
     st.markdown(_cal_legend(), unsafe_allow_html=True)
     d = ca.daily_frame(row)
     rng = st.radio("顯示範圍", ["未來 30 天", "未來 60 天", "未來 90 天"],
@@ -243,15 +204,9 @@ def render_calendar_tab(listing_id: int, listing_row, listings_df):
             _s = dd[dd["ym"] == _m]
             _bk, _tt = int(_s["booked"].sum()), len(_s)
             st.markdown(
-<<<<<<< HEAD
                 f'<div style="font-size:var(--sa-text-body);font-weight:700;color:{P["ink"]};'
                 f'margin-bottom:2px;">{_m.month} 月'
                 f'<span style="font-weight:400;font-size:var(--sa-text-caption);'
-=======
-                f'<div style="font-size:.88rem;font-weight:700;color:{P["ink"]};'
-                f'margin-bottom:2px;">{_m.month} 月'
-                f'<span style="font-weight:400;font-size:.75rem;'
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
                 f'color:{P["muted"]};margin-left:8px;'
                 f'font-variant-numeric:tabular-nums;">'
                 f'已訂 {_bk}/{_tt} 天 · {_bk / _tt:.0%}</span></div>',
@@ -263,12 +218,8 @@ def render_calendar_tab(listing_id: int, listing_row, listings_df):
 
     # ── 問題 → 行動:空檔警示與營收定價刻意不再用 divider 隔開,
     #    讓「哪裡有洞」緊接著「怎麼補」。 ──
-<<<<<<< HEAD
     numbered_section_title(
         3, "空檔警示", "未來 90 天內連續 5 天以上無訂單")
-=======
-    sec("空檔警示(未來 90 天內連續 5 天以上無訂單)")
->>>>>>> a7faf33a8d684411d0b07457665e38d0f6d4d906
     gaps = ca.gap_segments(row, min_len=5, horizon=90)
     if len(gaps):
         g = gaps.copy()
