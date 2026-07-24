@@ -238,7 +238,7 @@ def train_variant(variant: str):
 
 
 def _ev_block(part):
-    """轉為 backend_v2_sections 期望的 eval schema。"""
+    """轉為 eval_results.json 的 eval schema。"""
     h = part["honest"]["lgbm"]
     return {
         "single_split": part["single_split"],
