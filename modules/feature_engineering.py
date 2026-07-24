@@ -81,12 +81,27 @@ PRICE_DERIVED = ["price_per_person", "price_per_bedroom"]
 
 # ── 載入器（Streamlit 端請在 pages 以 @st.cache_resource 包裝）──
 def load_dataset_final():
-    """載入多模態資料集,並併入負評比例特徵(訓練腳本產出之 _nlp_extra.csv)。"""
+    """載入多模態資料集,併入負評比例(_nlp_extra.csv)與 v90 核心特徵橋接欄。
+
+    v90 換模(37特徵/HistGB/vacancy_90):模型用到 property_type_code、
+    photo_design_sense 兩欄不在 dataset_multimodal,由 _core_extra.csv(依 id)
+    併入,確保 predict_risk_v2 取得完整 37 特徵。缺檔時以 0 補,避免頁面崩潰。
+    """
     df = pd.read_csv(DATASET_CSV, encoding="utf-8-sig")
     extra = DATA_DIR / "_nlp_extra.csv"
     if extra.exists() and "neg_review_ratio" not in df.columns:
         df = df.merge(pd.read_csv(extra), on="id", how="left")
         df["neg_review_ratio"] = df["neg_review_ratio"].fillna(0.0)
+    core_extra = DATA_DIR / "_core_extra.csv"
+    if core_extra.exists():
+        add = [c for c in ["property_type_code", "photo_design_sense"]
+               if c not in df.columns]
+        if add:
+            ce = pd.read_csv(core_extra)
+            df = df.merge(ce[["id"] + add], on="id", how="left")
+    for c in ["property_type_code", "photo_design_sense"]:
+        if c not in df.columns:
+            df[c] = 0.0
     return df
 
 
@@ -140,8 +155,8 @@ def predict_risk_v2(row, bundle, force_variant=None, algo=None):
     algo : "lgbm" / "xgb" / None — 分類演算法(None=bundle 主力 LightGBM)
 
     回傳 dict:
-      risk_score   模型 A(LightGBM 迴歸)預測空屋率 0~1
-      notify_prob  模型 B 校準後 P(Y_vacancy >= 0.6)
+      risk_score   模型 A(HistGB 迴歸)預測未來90天空屋率 0~1
+      notify_prob  模型 B 校準後 P(vacancy_90 > 0.70)
       tier         "red"(機率>=0.60, P約0.70)/"yellow"(>=0.35, R約0.70)/"green"
       notify       是否觸發紅色警報(向下相容鍵)
       variant / algo / threshold / confidence

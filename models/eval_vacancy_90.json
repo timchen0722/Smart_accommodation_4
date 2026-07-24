@@ -1,0 +1,334 @@
+{
+  "generated_at": "2026-07-23T17:24:40",
+  "source_script": "scripts/04_eval/build_data_analysis_json.py",
+  "model": {
+    "reg": "HistGradientBoostingRegressor",
+    "clf": "HistGradientBoostingClassifier + Isotonic 校準",
+    "compare": "XGBoost（對照）"
+  },
+  "n_samples": 5849,
+  "n_features": 37,
+  "features": [
+    {
+      "key": "price",
+      "zh": "每晚價格"
+    },
+    {
+      "key": "accommodates",
+      "zh": "可住人數"
+    },
+    {
+      "key": "bedrooms",
+      "zh": "臥室數"
+    },
+    {
+      "key": "beds",
+      "zh": "床位數"
+    },
+    {
+      "key": "bathrooms_count",
+      "zh": "衛浴數"
+    },
+    {
+      "key": "minimum_nights",
+      "zh": "最短入住晚數"
+    },
+    {
+      "key": "amenities_count",
+      "zh": "設施總數"
+    },
+    {
+      "key": "instant_bookable",
+      "zh": "即時預訂"
+    },
+    {
+      "key": "room_type_code",
+      "zh": "房型"
+    },
+    {
+      "key": "property_type_code",
+      "zh": "房產類型"
+    },
+    {
+      "key": "neighbourhood_code",
+      "zh": "行政區"
+    },
+    {
+      "key": "latitude",
+      "zh": "緯度"
+    },
+    {
+      "key": "longitude",
+      "zh": "經度"
+    },
+    {
+      "key": "host_is_superhost",
+      "zh": "超讚房東"
+    },
+    {
+      "key": "host_response_rate",
+      "zh": "房東回覆率"
+    },
+    {
+      "key": "host_acceptance_rate",
+      "zh": "房東接受率"
+    },
+    {
+      "key": "host_listings_count",
+      "zh": "房東房源數"
+    },
+    {
+      "key": "host_tenure_days",
+      "zh": "房東經營天數"
+    },
+    {
+      "key": "review_scores_rating",
+      "zh": "總體評分"
+    },
+    {
+      "key": "review_scores_cleanliness",
+      "zh": "清潔度評分"
+    },
+    {
+      "key": "review_scores_location",
+      "zh": "地點評分"
+    },
+    {
+      "key": "review_scores_value",
+      "zh": "性價比評分"
+    },
+    {
+      "key": "review_scores_communication",
+      "zh": "溝通評分"
+    },
+    {
+      "key": "review_scores_checkin",
+      "zh": "入住體驗評分"
+    },
+    {
+      "key": "review_scores_accuracy",
+      "zh": "描述準確度"
+    },
+    {
+      "key": "price_pctl_nbhd",
+      "zh": "同區同房型價格百分位"
+    },
+    {
+      "key": "score_pctl_nbhd",
+      "zh": "同區同房型評分百分位"
+    },
+    {
+      "key": "amenities_vs_median",
+      "zh": "設施數/周邊中位數"
+    },
+    {
+      "key": "nbr_density_1km",
+      "zh": "1km房源密度"
+    },
+    {
+      "key": "nbr_density_same_type_1km",
+      "zh": "1km同房型密度"
+    },
+    {
+      "key": "self_checkin",
+      "zh": "自助入住"
+    },
+    {
+      "key": "response_speed",
+      "zh": "房東回覆速度"
+    },
+    {
+      "key": "desc_len",
+      "zh": "房源描述字數"
+    },
+    {
+      "key": "host_about_len",
+      "zh": "房東自介字數"
+    },
+    {
+      "key": "maximum_nights",
+      "zh": "最長可住晚數"
+    },
+    {
+      "key": "min_nights_avg_ntm",
+      "zh": "近期平均最短入住"
+    },
+    {
+      "key": "photo_design_sense",
+      "zh": "封面照設計感"
+    }
+  ],
+  "label_def_90": "Y_vacancy_90 > 0.70（未來90天空置>63天）",
+  "base_rate_90": 0.3741,
+  "base_rate_365": 0.3136,
+  "thresholds": {
+    "red": 0.6,
+    "yellow": 0.35
+  },
+  "single_split": {
+    "reg": {
+      "r2_90": 0.4214,
+      "r2_365": 0.5915,
+      "mae_90": 0.194,
+      "mae_365": 0.1489,
+      "rmse_90": 0.2586
+    },
+    "clf": {
+      "auc_90": 0.8406,
+      "auc_365": 0.9001,
+      "prauc_90": 0.738,
+      "precision_90": 0.6953,
+      "recall_90": 0.6742,
+      "f1_90": 0.6846
+    }
+  },
+  "groupkfold": {
+    "reg": {
+      "r2_90": 0.1999,
+      "r2_90_std": 0.0323,
+      "r2_365": 0.2261,
+      "mae_90": 0.2412
+    },
+    "clf": {
+      "auc_90": 0.754,
+      "auc_90_std": 0.0202,
+      "auc_365": 0.7154,
+      "prauc_90": 0.6638,
+      "prauc_365": 0.5532
+    }
+  },
+  "alerts_90": {
+    "red": {
+      "precision": 0.7296,
+      "coverage": 0.1694
+    },
+    "yellow": {
+      "precision": 0.5613,
+      "coverage": 0.4642
+    }
+  },
+  "importance_90": [
+    {
+      "key": "beds",
+      "zh": "床位數",
+      "value": 0.1605
+    },
+    {
+      "key": "host_acceptance_rate",
+      "zh": "房東接受率",
+      "value": 0.1091
+    },
+    {
+      "key": "host_listings_count",
+      "zh": "房東房源數",
+      "value": 0.0732
+    },
+    {
+      "key": "min_nights_avg_ntm",
+      "zh": "近期平均最短入住",
+      "value": 0.028
+    },
+    {
+      "key": "host_response_rate",
+      "zh": "房東回覆率",
+      "value": 0.0254
+    },
+    {
+      "key": "price",
+      "zh": "每晚價格",
+      "value": 0.0232
+    },
+    {
+      "key": "longitude",
+      "zh": "經度",
+      "value": 0.0213
+    },
+    {
+      "key": "photo_design_sense",
+      "zh": "封面照設計感",
+      "value": 0.0206
+    },
+    {
+      "key": "price_pctl_nbhd",
+      "zh": "同區同房型價格百分位",
+      "value": 0.0177
+    },
+    {
+      "key": "minimum_nights",
+      "zh": "最短入住晚數",
+      "value": 0.017
+    },
+    {
+      "key": "host_tenure_days",
+      "zh": "房東經營天數",
+      "value": 0.0161
+    },
+    {
+      "key": "amenities_vs_median",
+      "zh": "設施數/周邊中位數",
+      "value": 0.0115
+    }
+  ],
+  "importance_365": [
+    {
+      "key": "beds",
+      "zh": "床位數",
+      "value": 0.1717
+    },
+    {
+      "key": "host_acceptance_rate",
+      "zh": "房東接受率",
+      "value": 0.1072
+    },
+    {
+      "key": "host_listings_count",
+      "zh": "房東房源數",
+      "value": 0.0866
+    },
+    {
+      "key": "host_tenure_days",
+      "zh": "房東經營天數",
+      "value": 0.0607
+    },
+    {
+      "key": "maximum_nights",
+      "zh": "最長可住晚數",
+      "value": 0.0561
+    },
+    {
+      "key": "min_nights_avg_ntm",
+      "zh": "近期平均最短入住",
+      "value": 0.0489
+    },
+    {
+      "key": "host_response_rate",
+      "zh": "房東回覆率",
+      "value": 0.0466
+    },
+    {
+      "key": "host_about_len",
+      "zh": "房東自介字數",
+      "value": 0.0361
+    },
+    {
+      "key": "desc_len",
+      "zh": "房源描述字數",
+      "value": 0.0294
+    },
+    {
+      "key": "nbr_density_1km",
+      "zh": "1km房源密度",
+      "value": 0.0207
+    },
+    {
+      "key": "amenities_count",
+      "zh": "設施總數",
+      "value": 0.0202
+    },
+    {
+      "key": "photo_design_sense",
+      "zh": "封面照設計感",
+      "value": 0.0189
+    }
+  ]
+}

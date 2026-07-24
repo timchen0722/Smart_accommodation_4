@@ -4,9 +4,10 @@
 刻意不 import streamlit:所有函式皆為 DataFrame in / DataFrame(或 dict) out,
 可離線用 pytest 驗證;快取由呼叫端(platform_sections)負責。
 
-營收口徑(doc/07):
-  預估年營收 = price x (1 - vac_pred) x 365
+營收口徑(doc/07 + 2026-07-23 v90 雙輸出):
+  預估年營收 = price x (1 - vac_pred_365) x 365   ← 年營收用 365 天空屋率
   平台收入   = 預估年營收 x 抽成率
+  風險/空屋率顯示則用 vac_pred(90 天)。vac_pred_365 缺檔時回退 vac_pred。
 """
 from __future__ import annotations
 
@@ -25,10 +26,14 @@ def _num(s: pd.Series) -> pd.Series:
 
 
 def add_revenue_columns(df: pd.DataFrame, commission: float) -> pd.DataFrame:
-    """回傳新 DataFrame,附加 est_annual_revenue 與 platform_revenue。"""
+    """回傳新 DataFrame,附加 est_annual_revenue 與 platform_revenue。
+
+    年營收採 365 天空屋率(vac_pred_365);舊資料無該欄時回退 vac_pred。
+    """
     out = df.copy()
     price = _num(out["price"])
-    occ = (1.0 - _num(out["vac_pred"])).clip(0.0, 1.0)
+    vac_col = "vac_pred_365" if "vac_pred_365" in out.columns else "vac_pred"
+    occ = (1.0 - _num(out[vac_col])).clip(0.0, 1.0)
     out["est_annual_revenue"] = price * occ * DAYS_PER_YEAR
     out["platform_revenue"] = out["est_annual_revenue"] * float(commission)
     return out

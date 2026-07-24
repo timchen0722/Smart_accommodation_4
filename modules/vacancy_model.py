@@ -82,6 +82,16 @@ def load_data():
     if extra.exists() and "neg_review_ratio" not in df.columns:
         df = df.merge(pd.read_csv(extra), on="id", how="left")
         df["neg_review_ratio"] = df["neg_review_ratio"].fillna(0.0)
+    # v90 換模：併入 37 特徵橋接欄（property_type_code / photo_design_sense）
+    core_extra = DATA_DIR / "_core_extra.csv"
+    if core_extra.exists():
+        add = [c for c in ["property_type_code", "photo_design_sense"]
+               if c not in df.columns]
+        if add:
+            df = df.merge(pd.read_csv(core_extra)[["id"] + add], on="id", how="left")
+    for c in ["property_type_code", "photo_design_sense"]:
+        if c not in df.columns:
+            df[c] = 0.0
     return df
 
 
@@ -91,7 +101,7 @@ def feature_cols(df):
 
 @cache_resource(show_spinner="載入空屋率雙軌模型 …")
 def get_models():
-    """v4:優先載入離線訓練 bundle(LightGBM,標籤 Y>=0.6);缺件時退回在地訓練。"""
+    """v90:優先載入離線訓練 bundle(HistGB,標籤 vacancy_90>0.70);缺件時退回在地訓練。"""
     df = load_data()
     yv = pd.to_numeric(df["Y_vacancy"], errors="coerce").fillna(0)
     try:
