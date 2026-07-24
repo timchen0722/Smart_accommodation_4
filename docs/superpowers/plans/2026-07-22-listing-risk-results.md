@@ -1,5 +1,22 @@
 # Listing Risk Results Redesign Implementation Plan
 
+## ⚠️ 實作狀態：未實作 · 待決（2026-07-24 盤點）
+
+**這份計畫從未動工**，23 個 checkbox 全未勾，程式面查證一致：
+
+- `modules/quadrant.py` 只有 `classify_row` / `annotate` / `attach_calendar` / `summary`，
+  本計畫要求的 `deduplicate_listings` / `category_counts` / `analysis_summary` /
+  `validate_partition` **都不存在**
+- `modules/quadrant_sections.py`、`tests/test_quadrant.py` **不存在**
+
+範圍是「房東入口的象限卡片改版」；後續 2026-07-23 實作的是**後台**風險管理雙檢視
+（`docs/superpowers/plans/2026-07-23-風險管理雙檢視.md`），兩者範圍不同但概念重疊。
+
+**使用者裁示（2026-07-24）:先列入待辦，之後再討論要不要處理。**
+在討論出結果前，不要開工，也不要在盤點時當成「進行中」。
+
+---
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the duplicated quadrant statistics/table with clickable classification cards, deduplicated analysis summaries, and category-specific listing details while applying the approved classification copy everywhere.
