@@ -19,7 +19,11 @@
 - 模型與解釋：LightGBM、XGBoost、scikit-learn、SHAP、LIME、Joblib；既有模型檔與套件版本有相依性，請勿任意升級或替換。
 - 狀態與資料來源：以 Streamlit session/cache、CSV／Parquet 與本地模型產物為主；目前不是以資料庫作為主要應用狀態來源。
 - 程式風格：Python 使用 `snake_case`、清楚的函式命名與適量型別標註；共用邏輯應放入 `modules/`，頁面檔以流程編排與呈現為主。
-- UI 文案：以繁體中文為主，沿用既有日系簡約、低彩度設計；共用色彩、字級、間距與卡片樣式集中維護於 `modules/ui_components.py`。
+- UI 設計系統（2026-07-24 整理完成）：色彩、字級、間距、圓角、陰影、斷點、風險等級文案的**唯一來源是 `modules/design_tokens.py`**（純資料、無 Streamlit 依賴、可 pytest）；共用元件在 `modules/ui_kit.py`（PageHeader／SectionHeader／StatCard／RiskBadge／FilterGroup／DataTable／Primary+SecondaryButton／EmptyState／Loading／model_spec）。`modules/ui_components.py` 退為相容門面，re-export 這些元件，既有 import 不必改。
+- UI 硬編碼禁令：頁面與模組**不得再出現字面色碼、字級、圓角**。CSS 情境用 `var(--sa-*)`（由 `design_tokens.css_variables()` 注入）；**Plotly／離線 HTML／iframe 情境必須改用 Python 端的 token 值**（`T.COLOR[...]`、`T.tier_color()`），因為它們吃不到 CSS 變數。這兩條各有測試把關（`test_ui_consistency.py`）。
+- UI 文案：以繁體中文為主，沿用既有日系簡約、低彩度設計。風險三層一律「🔴 高風險／🟡 觀察／🟢 安全」，租客五科分數帶一律用規則書 v1.0 的四級（優先查看／值得考慮／普通／建議多比較）——兩者都只有一份定義，改文案只改 `design_tokens.py`。
+- UI 按鈕分級：每個區塊至多一顆 `ui_kit.primary_button`（送出／批次發送／產生報告），其餘一律 `secondary_button`；寬度用 `stretch=True`，不要再寫 `use_container_width`。
+- 原生標籤的 CSS 權重：Streamlit 對 `h1`/`p` 有自己的樣式（權重 0,1,1），單一 class 選擇器會被蓋掉。`ui_kit` 的 PageHeader 因此寫成 `.sa-page-header .sa-page-title`；若日後新增會渲染成原生標籤的元件，記得比照辦理並用瀏覽器實測 computed style，**grep 原始碼驗不出這種錯**。
 - 共用元件：房源詳情應優先重用 `modules/listing_detail.py`；資料載入、模型推論、象限判定及地址推估不可在頁面內各自複製一套。
 - 地址限制：畫面中的「推估地址」由鄰近地標推算至道路層級，不是房源真實門牌，文案不得宣稱為精確地址。
 - 模型限制：風險分級、空房率、近 90 天實際未訂房率及行政區中位數差異是不同指標；調整前必須確認欄位定義與目前演算法選擇。
@@ -35,16 +39,36 @@
 - `pages/1_🏠_房東入口.py`：房東營運面板、帳號／房源篩選、房源卡與風險資訊。
 - `pages/2_🔍_租客入口.py`：租客端功能。
 - `pages/3_📊_後台分析.py`：平台後台分析。
-- `modules/ui_components.py`：全站共用 UI 樣式、設計 token 與元件。
+- `modules/design_tokens.py`：**設計 token 唯一來源** —— 顏色／TINT／字級 9 階／間距／圓角／陰影／斷點／`RISK_TIERS`／`SCORE_BANDS`／`PLATFORM_COLOR`／`HERO`／`css_variables()`。
+- `modules/ui_kit.py`：共用元件庫（11 個元件 + `component_css()`）。
+- `modules/ui_components.py`：相容門面 —— 全域 CSS 注入與舊 API（`P`／`sec`／`html_table`…），並 re-export `ui_kit`。
 - `modules/data_loader.py`：資料載入與快取。
 - `modules/feature_engineering.py`：特徵處理、模型載入與預測。
 - `modules/quadrant.py`：模型預估與真實檔期的象限／營運狀態判定。
 - `modules/listing_detail.py`：共用房源詳情介面。
 - `modules/geo_utils.py`：離線行政區與推估地址邏輯。
 - `modules/calendar_analytics.py`、`modules/calendar_sections.py`：日曆與訂房檔期分析。
-- `tests/`：目前主要涵蓋通知組合與平台分析邏輯。
+- `tests/`：171 案，涵蓋通知組合、平台分析邏輯、租客五科計分、風險管理 AppTest，以及設計系統的反迴歸守門（`test_design_tokens.py`／`test_ui_kit.py`／`test_ui_consistency.py`）。
 
-## 📌 當前開發進度（最後更新：2026-07-22）
+## 📌 當前開發進度（最後更新：2026-07-24）
+
+### 2026-07-24 前端介面一致性整理（階段 1–10 完成）
+
+- [x] 建立 `design_tokens.py`（唯一來源）與 `ui_kit.py`（11 元件），`ui_components.py` 退為相容門面。
+- [x] 風險三層文案收斂（原本 6 份對照表）、租客五科分數帶收斂為規則書 v1.0 四級（原本兩套並存）。
+- [x] 後台四分頁、房東入口、租客入口全面改用共用元件；按鈕分主／次。
+- [x] 全站硬編碼清零:字面字級 52 種 → **1 種**（僅 `.portal-icon`，屬白名單）、
+      圓角 15 種 → **0 種**、色碼在 `design_tokens.py` 以外 → **0 種**。
+- [x] 重複資訊去重 D1–D8:地圖點位改吃三層警報 `tier`（原本自帶一套空屋率門檻）、
+      模型口徑三處合一、風險管理補關鍵指標卡、多處重複計數與說明移除。
+- [x] 瀏覽器實測驗收:CSS 變數全數解析、桌機 1280 與行動 375 皆無水平溢出、
+      渲染字級 9 種、圓角我方 4 種（另 2 種來自 Streamlit 內建元件）。
+- [x] 修掉一個 grep 驗不出的缺陷:PageHeader 的 `h1` 被 Streamlit 樣式蓋過，
+      實際渲染 44px 而非 token 的 24px；已改複合選擇器並加測試。
+- [ ] `modules/backend_v2_sections.py` 為死碼（全專案零引用，內含 v90 換模前的過期說明），另案處理。
+- [ ] 階段 9 的 D8 選項②（嚴格套用六段結構到所有分析頁）未執行，僅補了風險管理的指標卡。
+
+### 先前進度（2026-07-22 以前）
 
 - [x] 已建立 Streamlit v4 智慧旅宿空屋率風險預警平台，整合房東、租客與平台後台頁面。
 - [x] 平台後台分析已重組為五個營運分頁，並完成多項平台監管與營收分析調整。

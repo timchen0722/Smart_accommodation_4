@@ -30,11 +30,18 @@ _COMPONENT_CSS = """
 /* ── PageHeader ── */
 .sa-page-header{padding:6px 0 10px;margin-bottom:var(--sa-space-3);
   border-bottom:1px solid var(--sa-border);}
-.sa-page-title{margin:0;color:var(--sa-ink);
+/* 這兩條刻意用「父層 class + 子層 class」的複合選擇器(權重 0,2,0):
+   PageHeader 是全站唯一渲染成原生 <h1>/<p> 的元件,而 Streamlit 自己有一條
+   `.st-emotion-cache-xxx h1`(權重 0,1,1)把 h1 放大到 2.75rem,會蓋過單一
+   class 的 `.sa-page-title`(0,1,0)。2026-07-24 在瀏覽器實測抓到:標題被
+   放大成 44px、說明文字變 16px,與 token 完全不符。其餘元件都是 div/span,
+   不受影響,所以只有這裡需要加權重。 */
+.sa-page-header .sa-page-title{margin:0;color:var(--sa-ink);
   font-size:var(--sa-text-page-title);font-weight:var(--sa-text-page-title-weight);
   letter-spacing:var(--sa-text-page-title-ls);line-height:1.25;}
-.sa-page-desc{margin:var(--sa-space-1) 0 0;color:var(--sa-muted);
-  font-size:var(--sa-text-page-desc);line-height:1.55;max-width:78ch;}
+.sa-page-header .sa-page-desc{margin:var(--sa-space-1) 0 0;color:var(--sa-muted);
+  font-size:var(--sa-text-page-desc);font-weight:var(--sa-text-page-desc-weight);
+  line-height:1.55;max-width:78ch;}
 
 /* ── SectionHeader ── */
 .sa-section{display:flex;align-items:center;gap:var(--sa-space-2);

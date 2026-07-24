@@ -317,3 +317,22 @@ def test_demo_app_button_types_are_distinguished(app):
 def test_demo_app_injects_token_variables(app):
     body = "".join(m.value for m in app.markdown)
     assert "--sa-danger:" in body and "--sa-radius-md:" in body
+
+
+def test_page_header_css_outweighs_streamlit_heading_style():
+    """PageHeader 的字級規則必須贏過 Streamlit 內建的 h1 樣式。
+
+    2026-07-24 在瀏覽器實測抓到:`.sa-page-title`(權重 0,1,0)被 Streamlit 的
+    `.st-emotion-cache-xxx h1{font-size:2.75rem}`(權重 0,1,1)蓋過,標題實際
+    渲染成 44px 而非 token 的 24px。純 grep 驗不出來 —— 原始碼裡確實寫著
+    var(--sa-text-page-title),只是沒生效。
+
+    修法是改用複合選擇器(0,2,0)。這個測試釘住那個寫法,避免有人「簡化」回去。
+    """
+    css = K.component_css()
+    for cls in (".sa-page-title", ".sa-page-desc"):
+        bare = f"\n{cls}{{"
+        assert bare not in css, (
+            f"{cls} 不可用單一 class 選擇器,會被 Streamlit 的 h1/p 樣式蓋過")
+        assert f".sa-page-header {cls}{{" in css, (
+            f"{cls} 應寫成 `.sa-page-header {cls}` 以提高權重")

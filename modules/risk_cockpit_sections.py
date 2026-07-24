@@ -121,6 +121,9 @@ def render():
 
     ui_kit.section_header("高風險房源與房東管理",
                           desc="先在「房東管理」找到整批惡化的房東，再下鑽到「房源管理」逐間處理")
+    # D8(2026-07-24):本分頁原本一進來就是列表,看不到全局規模。
+    # 補一列關鍵指標卡,讓「這批要處理的量有多大」在下鑽之前就先講清楚。
+    _risk_kpis(df)
     view = st.session_state.setdefault("rm_view", "hosts")
     _tabs(view)
     st.divider()
@@ -128,6 +131,27 @@ def render():
         _render_listings(df, cm)
     else:
         _render_hosts(df, cm)
+
+
+def _risk_kpis(df) -> None:
+    """風險管理分頁的關鍵指標卡:先看整體規模,再決定要不要下鑽。
+
+    只放數字,判讀門檻交給下方各區塊與 risk_legend —— 遵守「統計卡只放數字」。
+    """
+    tier = df["tier"].astype(str)
+    n_red = int((tier == "red").sum())
+    n_yellow = int((tier == "yellow").sum())
+    n_total = int(len(df))
+    red_hosts = int(df.loc[tier == "red", "host_id"].nunique()) if n_red else 0
+    ratio = (n_red / n_total) if n_total else 0.0
+    ui_kit.stat_card_row([
+        (f"{T.tier_label('red')}房源", f"{n_red:,} 間",
+         f"占 {ratio:.1%}", "danger"),
+        (f"{T.tier_label('yellow')}房源", f"{n_yellow:,} 間", None, "warning"),
+        ("涉及房東", f"{red_hosts:,} 位", "名下至少 1 間高風險"),
+        ("篩選範圍房源", f"{n_total:,} 間"),
+    ])
+    st.divider()
 
 
 def _lime_reasons(listing_id: int, top: int = 3) -> list:
