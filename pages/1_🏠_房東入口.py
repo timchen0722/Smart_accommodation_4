@@ -17,9 +17,9 @@ from google import genai
 from google.genai.errors import APIError
 
 from modules import design_tokens as T
-from modules.ui_components import (inject_css, P, ROOM_JP, sec, mb, note,
-                                   numbered_section_title, overview_metric_card,
-                                   sidebar_nav)
+from modules import ui_kit
+from modules.ui_components import (inject_css, P, ROOM_JP, mb, note,
+                                   overview_metric_card, sidebar_nav)
 from modules.data_loader import load_listings
 from modules import feature_engineering as fe
 from modules.feature_engineering import (predict_risk_v2, simulate_price_change,
@@ -74,7 +74,7 @@ DS_IDX = DS.set_index("id")
 # ─── 側邊欄 ───────────────────────────────────────────────────
 with st.sidebar:
     sidebar_nav()
-    st.markdown("#### 🎯 請選擇登入的房東")
+    ui_kit.filter_group("請選擇登入的房東", icon="🎯")
     # 選單僅顯示房東名稱與 ID;房源間數與高風險紅點不再出現在此。
     _hc = (PREDS.groupby(["host_id"])
            .agg(n=("id", "size"), host_name=("host_name", "first"))
@@ -104,7 +104,8 @@ with st.sidebar:
 
     # 房源總表卡片的篩選條件(僅影響 TB1 房源卡,不改變上方摘要與象限統計)
     # 篩選介面與租客入口一致:多選 multiselect,預設全選。
-    st.markdown("#### 🔍 房源篩選")
+    ui_kit.filter_group("房源篩選", desc="以下篩選套用於本頁全部五個分頁",
+                        icon="🔍")
     _dist_opts = sorted(MY["neighbourhood_cleansed"].dropna().astype(str).unique())
     DIST_PICK = st.multiselect("🗺 行政區（可複選）", _dist_opts,
                                default=_dist_opts, key="card_district")
@@ -117,11 +118,10 @@ with st.sidebar:
     st.caption("HistGradientBoosting+XGBoost(Isotonic 校準)· 標籤 vacancy_90 > 0.70 · "
                "LIME 可解釋 · GroupKFold 誠實驗證 · 37 核心特徵")
 
-st.markdown(f"""
-<div style="padding:6px 0 10px;">
-  <h1 style="font-size:1.4rem;font-weight:700;color:{P['ink']};margin:0;">
-  房東營運面板</h1>
-</div><hr style="margin:0 0 12px;">""", unsafe_allow_html=True)
+ui_kit.page_header(
+    "房東營運面板", icon="🏠",
+    desc="房東視角:先從房源總表看該優先處理哪一間，再進定價情報與未來檔期找對策，"
+         "風險診斷查原因，最後產出可下載的月報")
 
 # 側邊欄的行政區／房型篩選為全頁範圍:房源總表的統計與卡片、以及定價情報、
 # 未來檔期、風險診斷、月報的房源選單皆以 SCOPE 為準(月報彙整同一範圍)。
@@ -129,7 +129,8 @@ SCOPE = MY[MY["neighbourhood_cleansed"].astype(str).isin(DIST_PICK)
            & MY["room_type"].astype(str).isin(ROOM_PICK)].reset_index(drop=True)
 _filtered = len(SCOPE) != len(MY)
 if SCOPE.empty:
-    st.info("目前篩選條件下沒有符合的房源,請調整側邊欄的行政區或房型。")
+    ui_kit.empty_state("目前篩選條件下沒有符合的房源",
+                       hint="請調整側邊欄的行政區或房型篩選。")
     st.stop()
 
 # 分頁順序 = 使用順序:先看該處理哪間,再看定價、檔期;
@@ -260,17 +261,15 @@ with TB1:
         ("平均預測空屋率", "—" if SCOPE["vac_pred"].isna().all()
          else f"{SCOPE['vac_pred'].mean()*100:.0f}%"),
     ]
+    # 統計卡只放數字;「需優先處理」的紅由 danger 膠囊承載,不再把數值染成
+    # 另一種紅(原本寫死 #D32F2F,與全站 danger 不同色)。
     for _col, (_label, _value) in zip((k1, k2, k3, k4, k5), _overview):
-        _val_style = ' style="color:#D32F2F;"' if _label == "需優先處理" else ''
-        _col.markdown(
-            f'<div class="overview-metric"><div class="overview-metric-label">'
-            f'{_label}</div><div class="overview-metric-value"{_val_style}>{_value}</div></div>',
-            unsafe_allow_html=True)
-    st.markdown(f"""
-    <div style="margin:20px 0 8px;font-size:1.15rem;font-weight:700;
-         color:{P['ink']};letter-spacing:.01em;">
-      模型預估與90實際訂房分析
-    </div>""", unsafe_allow_html=True)
+        with _col:
+            if _label == "需優先處理":
+                ui_kit.stat_card(_label, _value, T.tier_label("red"), "danger")
+            else:
+                ui_kit.stat_card(_label, _value)
+    ui_kit.section_header("模型預估與 90 天實際訂房分析")
     _qs = QD.summary(SCOPE)
     if not SCOPE.empty:
         quadrant_summary_table(_qs)
@@ -281,13 +280,14 @@ with TB1:
     _cards = SCOPE.copy()
     if _qpick != "全部":
         _cards = _cards[_cards["quadrant_label"] == _qpick]
+    # 標題寫進上方的 st.empty() 佔位,才能顯示「篩選後」的間數(執行順序在
+    # radio 之後);樣式仍走共用元件,不再自刻 h2。
     _card_title.markdown(
-        f'<h2 style="margin:24px 0 4px;font-size:1.45rem;line-height:1.35;'
-        f'font-weight:800;letter-spacing:-.01em;color:{P["ink"]};">'
-        f'房源卡片（{len(_cards)} 間）</h2>',
+        ui_kit.section_header_html(f"房源卡片（{len(_cards)} 間）"),
         unsafe_allow_html=True)
     if _cards.empty:
-        st.info("目前篩選條件下沒有符合的房源,請調整側邊欄的行政區或房型。")
+        ui_kit.empty_state("目前篩選條件下沒有符合的房源",
+                           hint="請調整側邊欄的行政區或房型篩選。")
     _cards = _cards.sort_values(["quadrant_priority", PROB_COL],
                                 ascending=[True, False]).reset_index(drop=True)
     from modules.geo_utils import nearest_address
@@ -342,8 +342,9 @@ with TB1:
   <div class="listing-card-calendar">90 天實際未訂房率<strong>{_unbooked90}</strong></div>
 </div>""", unsafe_allow_html=True)
                     _detail = DF_RAW[DF_RAW["id"] == int(r["id"])]
-                    if st.button("查看詳情", key=f"listing_detail_{int(r['id'])}",
-                                 width="stretch"):
+                    if ui_kit.secondary_button(
+                            "查看詳情", key=f"listing_detail_{int(r['id'])}",
+                            stretch=True):
                         if len(_detail):
                             LD.open_detail(_detail.iloc[0], show_actions=False)
                         else:
@@ -387,8 +388,7 @@ with TB2P:
                 with _rad_input:
                     radius = st.slider("附近比較半徑 (公尺)", 500, 2000, 1000, step=100,
                                        key="cmp_radius", label_visibility="collapsed")
-    st.markdown('<h2 class="pricing-section-title">1. 同業比價</h2>',
-                unsafe_allow_html=True)
+    ui_kit.section_header("同業比價", number="1")
 bid = _opt_lab[_sel3]
 B = MY[MY["id"] == bid].iloc[0]
 _blat, _blon = float(B["latitude"]), float(B["longitude"])
@@ -428,10 +428,13 @@ with TB2:
         _np_, _nm, _changed = _price0, _mn0, False
 
     # ── LIME 原因 Top 3(全寬置頂) ──
-    numbered_section_title(1, "LIME 原因 TOP3", "為什麼有風險")
-    mb("LIME 局部線性近似 · 解釋模型 B 的 P(空屋率≥60%) · 正值=推高風險")
+    ui_kit.section_header(
+        "LIME 原因 TOP3", number="1", note="為什麼有風險",
+        desc="LIME 局部線性近似 · 解釋模型 B 的 P(空屋率≥60%) · 正值=推高風險")
     if ROW is None:
-        st.info("此房源不在訓練協定內(經營未滿一年),無法提供 LIME 解釋。")
+        ui_kit.empty_state("無法提供 LIME 解釋",
+                           hint="此房源不在訓練協定內（經營未滿一年）。",
+                           icon="🔍")
         _lime_up = []
     else:
         try:
@@ -445,14 +448,16 @@ with TB2:
                 _w = abs(x["weight_pp"]) / _mx * 100
                 st.markdown(
                     f"<div style='margin:8px 0;'>"
-                    f"<div style='font-size:.85rem;font-weight:700;'>"
-                    f"{i}. {x['zh']}"
-                    f"<span style='color:{P['high']};float:right;'>"
+                    f"<div style='font-size:var(--sa-text-body);"
+                    f"font-weight:700;'>{i}. {x['zh']}"
+                    f"<span style='color:var(--sa-danger);float:right;'>"
                     f"+{x['weight_pp']:.1f} pp</span></div>"
-                    f"<div style='background:{P['tag_bg']};border-radius:6px;"
+                    f"<div style='background:var(--sa-neutral-bg);"
+                    f"border-radius:var(--sa-radius-bar);"
                     f"height:10px;margin-top:3px;'>"
-                    f"<div style='width:{_w:.0f}%;background:{P['high']};"
-                    f"height:10px;border-radius:6px;'></div></div></div>",
+                    f"<div style='width:{_w:.0f}%;background:var(--sa-danger);"
+                    f"height:10px;border-radius:var(--sa-radius-bar);'>"
+                    f"</div></div></div>",
                     unsafe_allow_html=True)
             if _lime_dn:
                 note("✅ 加分項:" + "; ".join(
@@ -465,8 +470,9 @@ with TB2:
     with cA:
         # ── What-if 控制項(先操作、再看結果) ──
         if ROW is not None:
-            numbered_section_title(
-                2, "WHAT-IF 模擬", "拖動後下方風險環與上方 LIME 即時重算")
+            ui_kit.section_header(
+                "WHAT-IF 模擬", number="2",
+                note="拖動後下方風險環與上方 LIME 即時重算")
             st.slider("每晚房價 (NT$)", 500, 50000, step=100, key=_k_price)
             st.number_input("最低入住天數(晚)", 1, 30, key=_k_mn)
 
@@ -494,26 +500,36 @@ with TB2:
             _tier_moved = ("　等級 " + TIER_ZH[_tier0][0] + " → " + t_zh
                            if _tier != _tier0 else "")
             _delta_html = (
-                f"<div style='margin-top:6px;font-size:.86rem;color:{_dc};"
-                f"font-weight:700;'>模擬變化:機率 {_d_prob*100:+.1f} pp·"
+                f"<div style='margin-top:6px;font-size:var(--sa-text-body);"
+                f"color:{_dc};font-weight:700;'>模擬變化:機率 "
+                f"{_d_prob*100:+.1f} pp·"
                 f"空屋率 {_d_vac*100:+.1f} pp{_tier_moved}</div>"
-                f"<div style='font-size:.74rem;color:{P['muted']};'>"
+                f"<div style='font-size:var(--sa-text-caption);"
+                f"color:var(--sa-muted);'>"
                 f"基準(現況):機率 {_prob0*100:.0f}%·空屋率 {_vac0*100:.0f}%</div>")
 
+        # 等級標籤改用共用 RiskBadge:與房源總表、後台列表、月報同名同色。
+        # 模型名稱吃 ALGO 而非寫死 —— v90 換模後主力已是 HistGradientBoosting,
+        # 原本這行不論 ALGO 為何都顯示「LightGBM」。
+        _algo_zh = {"xgb": "XGBoost", "histgb": "HistGradientBoosting"}.get(
+            ALGO, ALGO)
         st.markdown(
-            f"<div style='text-align:center;background:{P['surface']};"
-            f"border:1px solid {P['border']};border-radius:14px;padding:18px;"
-            f"{'border:2px dashed ' + P['accent'] + ';' if _changed else ''}'>"
-            f"<div style='font-size:.78rem;color:{P['muted']};letter-spacing:.08em;'>"
+            f"<div style='text-align:center;background:var(--sa-surface);"
+            f"border:1px solid var(--sa-border);"
+            f"border-radius:var(--sa-radius-md);padding:18px;"
+            f"{'border:2px dashed var(--sa-secondary);' if _changed else ''}'>"
+            f"<div style='font-size:var(--sa-text-label);"
+            f"font-weight:var(--sa-text-label-weight);"
+            f"letter-spacing:var(--sa-text-label-ls);color:var(--sa-muted);'>"
             f"{'⚡ 模擬後風險' if _changed else 'GroupKFold OOF 誠實預測'}</div>"
             f"{risk_ring(_prob, t_c, size=170)}"
-            f"<div style='margin-top:6px;'><span style='background:{t_c};color:#fff;"
-            f"border-radius:16px;padding:4px 18px;font-weight:800;'>{t_zh}</span></div>"
+            f"<div style='margin-top:6px;'>{ui_kit.risk_badge_html(_tier)}</div>"
             f"{_delta_html}"
-            f"<div style='color:{P['muted']};font-size:.8rem;margin-top:8px;'>"
+            f"<div style='color:var(--sa-muted);"
+            f"font-size:var(--sa-text-caption);margin-top:8px;'>"
             f"環 = 高風險機率 P(空屋率≥60%),紅≥60%·黃≥35%·綠<35%<br>"
             f"預測空屋率(模型A):<b>{_vac*100:.0f}%</b><br>"
-            f"模型:{'XGBoost' if ALGO == 'xgb' else 'LightGBM'}·"
+            f"模型:{_algo_zh}·"
             f"{'冷啟動' if _variant == 'cold' else '完整'}變體</div></div>",
             unsafe_allow_html=True)
 
@@ -526,7 +542,7 @@ with TB2:
                  "見右側 LIME 原因與改善建議。可試更大幅度調整觀察階梯跳動。")
 
     with cB:
-        numbered_section_title(3, "改善建議")
+        ui_kit.section_header("改善建議", number="3")
         _cs = None
         try:
             _cap = max(float(R["accommodates"] or 2), 1)
@@ -556,11 +572,17 @@ with TB2:
                 _store = st.session_state.setdefault("llm_advice_store", {})
                 _hit = _store.get(sel_id)
 
+                # 主要動作(產生建議)用 primary、清除用 secondary,
+                # 讓「這一區該按哪顆」在視覺上一眼可辨。
                 _b1, _b2 = st.columns([1, 1])
-                _clicked = _b1.button("🧠 產生 LLM 智慧建議", key=f"llm_go_{sel_id}",
-                                      use_container_width=True)
-                if _hit and _b2.button("🗑 清除", key=f"llm_clr_{sel_id}",
-                                       use_container_width=True):
+                with _b1:
+                    _clicked = ui_kit.primary_button(
+                        "🧠 產生 LLM 智慧建議", key=f"llm_go_{sel_id}",
+                        stretch=True)
+                with _b2:
+                    _cleared = _hit and ui_kit.secondary_button(
+                        "🗑 清除", key=f"llm_clr_{sel_id}", stretch=True)
+                if _cleared:
                     _store.pop(sel_id, None)
                     _hit = None
                     st.rerun()
@@ -625,7 +647,8 @@ with TB2:
                 own_amenities=_own_am)
             for i, s in enumerate(_sugs[:4], 1):
                 note(f"<b>{i}. {s['title']}</b>:{s['detail']}"
-                     f"<br><span style='font-size:.72rem;'>依據:{s['evidence']}</span>")
+                     f"<br><span style='font-size:var(--sa-text-caption);'>"
+                     f"依據:{s['evidence']}</span>")
 
 # ══════════════════════════════════════════════════════════════
 # TB3 附近比較(熱力圖 + 風險比較 + 同商圈排名 + 跨平台)
@@ -669,8 +692,9 @@ with TB3:
                 f'</div>', unsafe_allow_html=True)
             if _BD is None:
                 st.caption("此房源的詳細資料暫時無法載入。")
-            elif st.button("查看完整詳情", key=f"detail_price_{bid}",
-                           width="stretch"):
+            elif ui_kit.secondary_button("查看完整詳情",
+                                         key=f"detail_price_{bid}",
+                                         stretch=True):
                 # 房東視角不需要「立即租房 / 加入收藏」(那是租客動作)
                 LD.open_detail(_BD, show_actions=False)
         with _c_price:
@@ -691,13 +715,13 @@ with TB3:
                         st.markdown(
                             platform_card_html(_pl, _v, _sub, _my_pp, radius),
                             unsafe_allow_html=True)
-                        if st.button(f"🔍 {PD.label(_pl)}",
-                                     key=f"pf_{_pl}_{bid}", width="stretch"):
+                        if ui_kit.secondary_button(f"🔍 {PD.label(_pl)}",
+                                                   key=f"pf_{_pl}_{bid}",
+                                                   stretch=True):
                             PD.open_platform(_pl, _sub, radius, _my_pp)
         # ── 定價建議(單一區塊,三點:競品概況 → 價格落點 → 設施缺口) ──
         # 原本散在雙欄下方與分頁最末的三段說明,依使用者指示合併於此。
-        st.markdown('<h2 class="pricing-section-title">2. 定價建議</h2>',
-                    unsafe_allow_html=True)
+        ui_kit.section_header("定價建議", number="2")
         _pts = []
 
         # 1) 跨平台競品概況
@@ -761,8 +785,7 @@ with TB3:
         with _kpi_col:
             overview_metric_card(_kpi_label, _kpi_value, _kpi_note)
 
-    st.markdown('<h2 class="pricing-section-title">3. 周邊房源分布圖</h2>',
-                unsafe_allow_html=True)
+    ui_kit.section_header("周邊房源分布圖", number="3")
     mb("點位顏色 = 預測空屋率(綠 <40%・黃 40–69%・紅 ≥70%)· "
        "虛線圓為比對半徑 · 閃爍點為本房源 · 滑過任一點會同步標示右側列表")
     from modules.geo_utils import nearest_address as _addr_fn
@@ -795,14 +818,15 @@ with TB5:
 # ══════════════════════════════════════════════════════════════
 with TB6:
     from modules import report_builder as rb
-    sec("📄 房源經營月報自動生成")
-    mb("彙整風險等級 · 檔期進度 · 空檔明細 · 營收最適定價 · 評論面向 · AI 摘要")
+    ui_kit.section_header(
+        "房源經營月報自動生成",
+        desc="彙整風險等級 · 檔期進度 · 空檔明細 · 營收最適定價 · 評論面向 · AI 摘要")
     _sel6 = st.selectbox("選擇房源", list(_opt_lab.keys()), key="rep_sel")
     _rid = _opt_lab[_sel6]
     _rrow = MY[MY["id"] == _rid].iloc[0]
     _use_llm = st.checkbox("使用 LLM 生成 AI 摘要(需設定金鑰,較慢)", value=False,
                            key="rep_llm")
-    if st.button("🧾 產生月報", key="rep_go"):
+    if ui_kit.primary_button("🧾 產生月報", key="rep_go"):
         with st.spinner("彙整資料並生成月報 …"):
             _d = rb.collect(_rrow, _rrow, DF_RAW, PROB_COL, TIER_COL)
             if _use_llm:
@@ -818,9 +842,9 @@ with TB6:
         _nm = st.session_state.get("report_name", "月報")
         _c1, _c2 = st.columns(2)
         _c1.download_button("⬇️ 下載 Markdown", _md, file_name=f"{_nm}.md",
-                            mime="text/markdown", use_container_width=True)
+                            mime="text/markdown", width="stretch")
         _c2.download_button("⬇️ 下載 HTML(可列印/存 PDF)",
                             rb.to_html(_md, _nm), file_name=f"{_nm}.html",
-                            mime="text/html", use_container_width=True)
+                            mime="text/html", width="stretch")
         with st.container(border=True):
             st.markdown(_md)
