@@ -143,6 +143,34 @@ TIER_ALIAS = {
 # 「檔期資料不足」—— 統一以 label 為準。
 STATUS_NO_DATA = "檔期資料不足"
 
+# ═══════════════════════════════════════════════════════════════
+# 分數帶(租客入口五科成績單總分 0–25)
+# ═══════════════════════════════════════════════════════════════
+# 為什麼不套 RISK_TIERS:這是「連續分數的五級序列」,不是三態語意判斷。
+# 硬壓成紅/黃/綠會讓「非常優秀 vs 優秀」和「較差 vs 最需比較」失去區別。
+# 兩端與中段沿用語意色(success / warning / danger),另外兩級取同色系的
+# 深綠與橘,構成單調遞減的色階;放這裡是為了不讓頁面再自己寫一份。
+# (門檻, 名稱, 色碼) —— 由高分往低分比對,第一個 total >= 門檻者勝出。
+SCORE_BANDS = (
+    (22, "非常優秀", TINT["success"]["fg"]),   # #3D7A55 深綠
+    (18, "優秀",     COLOR["success"]),        # #5B9E73
+    (14, "普通",     COLOR["warning"]),        # #C49A4A
+    (10, "較差",     "#D98A4A"),               # 橘:warning 與 danger 之間
+    (0,  "最需比較", COLOR["danger"]),         # #C4645A
+)
+
+
+def score_band(total) -> tuple:
+    """回傳該總分所屬的 (名稱, 色碼);無法判讀時退回最低帶。"""
+    try:
+        v = float(total)
+    except (TypeError, ValueError):
+        return SCORE_BANDS[-1][1], SCORE_BANDS[-1][2]
+    for lo, name, color in SCORE_BANDS:
+        if v >= lo:
+            return name, color
+    return SCORE_BANDS[-1][1], SCORE_BANDS[-1][2]
+
 
 def tier_key(value) -> str | None:
     """把 tier key 或任何舊中文文案正規化成 red/yellow/green;無法辨識回 None。"""

@@ -17,8 +17,11 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
+# 本頁 score_pool() 內把 T 當作交通分數的區域變數,故 token 模組改名 DT
+from modules import design_tokens as DT
+from modules import ui_kit
 from modules.ui_components import (
-    inject_css, P, ROOM_JP, sec, mb, note, stat_card, overview_metric_card,
+    inject_css, P, ROOM_JP, mb, note, stat_card, overview_metric_card,
     html_table, apply_theme, sidebar_nav,
 )
 from modules.data_loader import load_listings, load_reviews
@@ -52,9 +55,8 @@ CANDIDATE_CAP = 300
 PAGE_SIZE = 8
 
 # 地圖 5 級顏色帶（對應圖例；門檻以 25 分制表示）
-BANDS = [(22, "非常優秀", "#2E7D52"), (18, "優秀", "#5B9E73"),
-         (14, "普通", "#C49A4A"), (10, "較差", "#D98A4A"),
-         (0, "最需比較", "#C4645A")]
+# 色碼與門檻的唯一來源是 design_tokens.SCORE_BANDS，本頁不再自己寫一份。
+BANDS = list(DT.SCORE_BANDS)
 
 
 def val_color(v, maxv=25):
@@ -166,9 +168,9 @@ def _mini_cards(items):
     """一列精簡數據小卡：items = [(值, 標籤, 顏色), ...]。比 stat_card 矮很多。"""
     cells = "".join(
         f'<div style="flex:1;text-align:center;background:{P["surface"]};'
-        f'border:1px solid {P["border"]};border-radius:9px;padding:7px 4px;">'
-        f'<div style="font-size:1.02rem;font-weight:800;color:{c};line-height:1.2;">{v}</div>'
-        f'<div style="font-size:.68rem;color:{P["muted"]};margin-top:2px;">{lab}</div></div>'
+        f'border:1px solid {P["border"]};border-radius:var(--sa-radius-sm);padding:7px 4px;">'
+        f'<div style="font-size:var(--sa-text-card-title);font-weight:800;color:{c};line-height:1.2;">{v}</div>'
+        f'<div style="font-size:var(--sa-text-label);color:{P["muted"]};margin-top:2px;">{lab}</div></div>'
         for v, lab, c in items)
     st.markdown(f'<div style="display:flex;gap:7px;">{cells}</div>',
                 unsafe_allow_html=True)
@@ -180,7 +182,7 @@ def _score_pill_row(row):
     for k in SUBJECT_ORDER:
         v = row[f"s_{k}"]
         disp = ("資料不足" if pd.isna(v)
-                else f"{_fmt(v)}<span style='font-size:.66rem;font-weight:600;'> /5</span>")
+                else f"{_fmt(v)}<span style='font-size:var(--sa-text-label);font-weight:600;'> /5</span>")
         items.append((disp, f"{SUBJECT_ICON[k]} {SUBJECT_ZH[k]}", val_color(v, 5)))
     _mini_cards(items)
 
@@ -217,30 +219,30 @@ def _detail_overview(row, L):
             st.markdown(
                 f'<img src="{_url}" referrerpolicy="no-referrer" '
                 f'style="width:100%;height:225px;object-fit:contain;display:block;'
-                f'border-radius:10px;background:{P["tag_bg"]};" '
+                f'border-radius:var(--sa-radius-sm);background:{P["tag_bg"]};" '
                 f'onerror="this.style.display=\'none\'">',
                 unsafe_allow_html=True)
         st.markdown(f"""
-        <div style="margin-top:6px;font-size:.98rem;font-weight:700;color:{P['ink']};
+        <div style="margin-top:6px;font-size:var(--sa-text-card-title);font-weight:700;color:{P['ink']};
              line-height:1.35;">{_html.escape(str(L['name']))}</div>
-        <div style="font-size:.74rem;color:{P['muted']};line-height:1.7;margin-top:3px;">
+        <div style="font-size:var(--sa-text-caption);color:{P['muted']};line-height:1.7;margin-top:3px;">
           📍 {addr}｜🛏 {L['room_type_zh']}｜👥 {int(L.get('accommodates',0))} 人<br>
-          💰 <b style="color:{P['tenant']};font-size:1.02rem;">${L['price']:,.0f}</b> / 晚
+          💰 <b style="color:{P['tenant']};font-size:var(--sa-text-card-title);">${L['price']:,.0f}</b> / 晚
           ｜⭐ {rating_s}（Airbnb）｜💬 {int(L['number_of_reviews'])} 則</div>
         """, unsafe_allow_html=True)
     with cr:
-        sec("五科成績單雷達圖")
+        ui_kit.section_header("五科成績單雷達圖")
         _radar(row, h=250)
     st.markdown(
         f'<div style="display:inline-block;border:1.5px solid {tcol};'
-        f'background:#F1F7F3;border-radius:9px;padding:5px 14px;margin:4px 0 8px;">'
-        f'<span style="font-size:.82rem;color:{P["ink2"]};">👑 綜合推薦 </span>'
-        f'<b style="font-size:1.2rem;color:{tcol};">{_fmt(row["total"])}</b>'
-        f'<span style="font-size:.8rem;color:{P["muted"]};"> / 25 ｜ {row["band"]}</span></div>',
+        f'background:var(--sa-success-bg);border-radius:var(--sa-radius-sm);padding:5px 14px;margin:4px 0 8px;">'
+        f'<span style="font-size:var(--sa-text-body);color:{P["ink2"]};">👑 綜合推薦 </span>'
+        f'<b style="font-size:var(--sa-text-metric);color:{tcol};">{_fmt(row["total"])}</b>'
+        f'<span style="font-size:var(--sa-text-caption);color:{P["muted"]};"> / 25 ｜ {row["band"]}</span></div>',
         unsafe_allow_html=True)
     _score_pill_row(row)
     st.markdown(
-        f'<div style="font-size:.75rem;color:{P["muted"]};margin-top:9px;'
+        f'<div style="font-size:var(--sa-text-caption);color:{P["muted"]};margin-top:9px;'
         f'line-height:1.6;">推薦理由：{_html.escape(str(row["reason"]))}</div>',
         unsafe_allow_html=True)
 
@@ -251,7 +253,7 @@ def _detail_transit_life(row, L):
     bus_name, bus_d = nearest_poi(lat, lon, POI_ALL["bus"])
     cL, cR = st.columns([1, 1.05])
     with cL:
-        sec("交通方便")
+        ui_kit.section_header("交通方便")
         _mini_cards([
             (f"{mrt_d:.0f}m" if math.isfinite(mrt_d) else "—", "最近捷運出口",
              val_color(ts.mrt_points(mrt_d), 3)),
@@ -261,7 +263,7 @@ def _detail_transit_life(row, L):
         ])
         st.caption(f"🚇 {mrt_name}（{ts.mrt_points(mrt_d)}/3）· 🚏 {bus_name}"
                    f"（{ts.bus_points(bus_d)}/2）· 直線距離估計")
-        sec("生活便利（達標狀況）")
+        ui_kit.section_header("生活便利", note="達標狀況")
         checks = [("🏪 超商", row["conv_cnt"], 1), ("🍜 餐飲", row["rest_cnt"], 5),
                   ("🏥 診所", row["clinic_cnt"], 1), ("🌳 公園", row["park_cnt"], 1)]
         _mini_cards([(f"{int(cnt)}", name, P["low"] if cnt >= nd else P["muted"])
@@ -271,7 +273,7 @@ def _detail_transit_life(row, L):
                    f"+公園{1 if row['park_cnt']>=1 else 0} = {_fmt(row['s_life'])}/5"
                    f"（超商500m・餐飲800m≥5・診所/公園1km）")
     with cR:
-        sec("周遭生活圈地圖（800m）")
+        ui_kit.section_header("周遭生活圈地圖", note="800m 內")
         frames = []
         for t in ["mrt", "bus", "convenience", "restaurant", "clinic", "park"]:
             pts = poi_points_within(lat, lon, POI_ALL[t], 800)
@@ -297,7 +299,7 @@ def _detail_transit_life(row, L):
 
 
 def _detail_price_amenity(row, L):
-    sec("價格合理")
+    ui_kit.section_header("價格合理")
     med = row["price_median"]
     D = row["price_D"]
     dcol = (P["muted"] if pd.isna(D)
@@ -312,7 +314,7 @@ def _detail_price_amenity(row, L):
                + ("（樣本較少，已放寬人數）" if row["price_relaxed"] else "")
                + "（同區＋同房型＋可住人數±1）")
 
-    sec("設備清單（本房源提供）")
+    ui_kit.section_header("設備清單", note="本房源提供")
     show = ["Wi-Fi", "冷氣", "電冰箱", "電梯", "洗衣機", "熱水", "吹風機"]
     flags = ts.match_amenities(L.get("amenities", "[]"), show)
     bath_txt = str(L.get("bathrooms_text", "") or "").lower()
@@ -320,7 +322,7 @@ def _detail_price_amenity(row, L):
     items = list(zip(show, flags)) + [("獨立衛浴", priv_bath)]
     chips = "".join(
         f'<span style="display:inline-block;border:1px solid {P["border"]};'
-        f'border-radius:14px;padding:4px 13px;margin:4px 6px 0 0;font-size:.8rem;'
+        f'border-radius:var(--sa-radius-pill);padding:4px 13px;margin:4px 6px 0 0;font-size:var(--sa-text-caption);'
         f'color:{P["low"] if ok else P["muted"]};background:{P["surface"]};">'
         f'{"✓" if ok else "✗"} {name}</span>'
         for name, ok in items)
@@ -334,8 +336,8 @@ def _detail_price_amenity(row, L):
         with st.expander(f"查看全部 {len(ams)} 項設備"):
             allchips = "".join(
                 f'<span style="display:inline-block;background:{P["tag_bg"]};'
-                f'border:1px solid {P["border"]};border-radius:12px;padding:3px 10px;'
-                f'margin:3px 4px 0 0;font-size:.72rem;color:{P["ink2"]};">'
+                f'border:1px solid {P["border"]};border-radius:var(--sa-radius-md);padding:3px 10px;'
+                f'margin:3px 4px 0 0;font-size:var(--sa-text-caption);color:{P["ink2"]};">'
                 f'{_html.escape(zh_amenity(a))}</span>' for a in ams)
             st.markdown(f"<div style='line-height:2.1;'>{allchips}</div>",
                         unsafe_allow_html=True)
@@ -343,7 +345,7 @@ def _detail_price_amenity(row, L):
 
 def _detail_reviews(row, L, listing_id):
     R = row["s_reputation"]
-    sec("住客口碑（NLP 分析）")
+    ui_kit.section_header("住客口碑", note="NLP 分析")
     window = min(20, int(row["rep_total"]))
     rep_disp = "資料不足" if pd.isna(R) else f"{_fmt(R)}/5"
     rc = P["muted"] if pd.isna(R) else val_color(R, 5)
@@ -374,7 +376,9 @@ def _detail_reviews(row, L, listing_id):
                 title=dict(text="情感分佈", font=dict(size=12)))
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("近期無可分析評論。")
+            ui_kit.empty_state("近期無可分析評論",
+                               hint="此房源近期沒有可供情緒分析的評論。",
+                               icon="💬")
     with ckw:
         with st.spinner("擷取高頻關鍵詞 …"):
             summ = listing_review_summary(REVIEWS, listing_id)
@@ -396,7 +400,7 @@ def _detail_reviews(row, L, listing_id):
             for s in snips:
                 st.markdown(
                     f'<div style="border-bottom:1px solid {P["border"]};'
-                    f'padding:6px 0;font-size:.76rem;color:{P["ink2"]};'
+                    f'padding:6px 0;font-size:var(--sa-text-caption);color:{P["ink2"]};'
                     f'line-height:1.6;">{_html.escape(str(s))}</div>',
                     unsafe_allow_html=True)
 
@@ -437,7 +441,7 @@ def detail_dialog():
         st.session_state.detail_open = False
         return
     _render_detail(int(cur))
-    if st.button("關閉", key="detail_close_btn", use_container_width=True):
+    if ui_kit.secondary_button("關閉", key="detail_close_btn", stretch=True):
         st.session_state.detail_open = False
         st.rerun()
 
@@ -450,26 +454,18 @@ def open_detail(listing_id):
 # ═══════════════════════════════════════════════════════════════
 # Header
 # ═══════════════════════════════════════════════════════════════
-st.markdown(f"""
-<div style="padding:6px 0 10px;">
-  <h1 style="font-size:1.4rem;font-weight:700;color:{P['ink']};margin:0;
-       letter-spacing:-.3px;">🔍 智能找房</h1>
-  <p style="font-size:.78rem;color:{P['muted']};margin:4px 0 0;">
-    必要條件篩選 → 五科成績單（交通・生活・價格・口碑・設備，各5分）→ 最在意兩科優先排序
-  </p>
-</div>
-<hr style="margin:0 0 14px;">
-""", unsafe_allow_html=True)
+ui_kit.page_header(
+    "智能找房", icon="🔍",
+    desc="租客視角:先用必要條件篩掉不合格的，再看五科成績單"
+         "（交通・生活・價格・口碑・設備，各 5 分），最在意的兩科優先排序")
 
 # ═══════════════════════════════════════════════════════════════
 # Sidebar
 # ═══════════════════════════════════════════════════════════════
 with st.sidebar:
     sidebar_nav()
-    st.markdown(f'<div style="font-size:1rem;font-weight:700;color:{P["ink"]};'
-                f'margin:6px 0 2px;">🔒 必要條件</div>'
-                f'<div style="font-size:.7rem;color:{P["muted"]};margin-bottom:6px;">'
-                f'不符合就先排除，不靠扣分留在排名</div>', unsafe_allow_html=True)
+    ui_kit.filter_group("必要條件", desc="不符合就先排除，不靠扣分留在排名",
+                        icon="🔒")
     all_nb = sorted(DF["neighbourhood_cleansed"].dropna().unique())
     sel_nbs = st.multiselect("地區（可複選）", all_nb, default=all_nb[:1], key="t_nb")
     rt_opts = sorted(DF["room_type_zh"].dropna().unique())
@@ -482,25 +478,20 @@ with st.sidebar:
                               default=[], key="t_must")
 
     st.divider()
-    st.markdown(f'<div style="font-size:.9rem;font-weight:700;color:{P["tenant"]};">'
-                f'❤️ 最在意的面向</div>'
-                f'<div style="font-size:.7rem;color:{P["muted"]};margin-bottom:4px;">'
-                f'選 2 項，優先排序這兩科</div>', unsafe_allow_html=True)
+    ui_kit.filter_group("最在意的面向", desc="選 2 項，優先排序這兩科",
+                        icon="❤️")
     sel_top2_zh = st.multiselect(
         "最在意兩科", [SUBJECT_ZH[s] for s in SUBJECT_ORDER],
         default=[SUBJECT_ZH["transit"], SUBJECT_ZH["price"]],
         max_selections=2, key="t_top2", label_visibility="collapsed")
 
     st.divider()
-    st.markdown(f'<div style="font-size:.9rem;font-weight:700;color:{P["tenant"]};">'
-                f'🛋 希望設備</div>'
-                f'<div style="font-size:.7rem;color:{P["muted"]};margin-bottom:4px;">'
-                f'計入設備分：符合比例 × 5</div>', unsafe_allow_html=True)
+    ui_kit.filter_group("希望設備", desc="計入設備分：符合比例 × 5", icon="🛋")
     sel_wish = st.multiselect("希望設備", WISH_LABELS, default=ts.DEFAULT_WISH,
                               key="t_wish", label_visibility="collapsed")
 
     st.divider()
-    if st.button("↻ 清除條件", use_container_width=True, key="t_reset"):
+    if ui_kit.secondary_button("↻ 清除條件", key="t_reset", stretch=True):
         for _k in ("t_nb", "t_rt", "t_price", "t_must", "t_top2",
                    "t_wish", "t_page", "t_mapdim"):
             st.session_state.pop(_k, None)
@@ -530,7 +521,9 @@ core = (flt["latitude"].notna() & flt["longitude"].notna()
 flt = flt[core]
 
 if flt.empty:
-    st.warning("😢 找不到符合必要條件的房源，請放寬地區、房型、預算或必備設備。")
+    ui_kit.empty_state("找不到符合必要條件的房源",
+                       hint="請放寬側欄的地區、房型、預算或必備設備。",
+                       icon="😢")
     st.stop()
 
 total_match = len(flt)
@@ -601,7 +594,7 @@ page_df = M.iloc[start:start + PAGE_SIZE]
 
 h_l, h_r = st.columns([1.55, 1])
 with h_l:
-    sec("推薦房源清單")
+    ui_kit.section_header("推薦房源清單")
 with h_r:
     map_dim = st.selectbox("房源分佈地圖 · 上色維度",
                            ["綜合總分"] + [SUBJECT_ZH[s] for s in SUBJECT_ORDER],
@@ -627,66 +620,79 @@ with col_list:
             v = r[f"s_{k}"]
             disp = "－" if pd.isna(v) else _fmt(v)
             chips += (
-                f'<span style="display:inline-block;background:#EAF4EE;'
-                f'border:1px solid #D6E8DC;border-radius:14px;padding:4px 12px;'
-                f'margin:5px 6px 0 0;font-size:.76rem;color:{P["ink2"]};">'
+                f'<span style="display:inline-block;background:var(--sa-success-bg);'
+                f'border:1px solid var(--sa-success-border);border-radius:var(--sa-radius-pill);padding:4px 12px;'
+                f'margin:5px 6px 0 0;font-size:var(--sa-text-caption);color:{P["ink2"]};">'
                 f'{SUBJECT_SHORT[k]} <b style="color:{P["tenant"]};">{disp}</b></span>')
         st.markdown(f"""
         <div style="background:{P['surface']};border:1px solid {P['border']};
-             border-radius:14px;padding:14px 16px;margin-bottom:12px;
+             border-radius:var(--sa-radius-pill);padding:14px 16px;margin-bottom:12px;
              box-shadow:0 1px 5px rgba(0,0,0,.05);">
           <div style="display:flex;gap:15px;align-items:flex-start;">
             <img src="{r['picture_url']}" referrerpolicy="no-referrer"
-                 style="width:210px;height:158px;object-fit:cover;border-radius:10px;
+                 style="width:210px;height:158px;object-fit:cover;border-radius:var(--sa-radius-sm);
                  background:{P['tag_bg']};flex:none;"
                  onerror="this.style.display='none'">
             <div style="flex:1;min-width:0;">
-              <div style="font-size:1.02rem;font-weight:700;color:{P['ink']};
+              <div style="font-size:var(--sa-text-card-title);font-weight:700;color:{P['ink']};
                    line-height:1.4;">{_html.escape(str(r['name']))}</div>
-              <div style="font-size:.77rem;color:{P['muted']};margin-top:5px;">
+              <div style="font-size:var(--sa-text-caption);color:{P['muted']};margin-top:5px;">
                 📍 {loc_line}</div>
               <div style="margin-top:6px;">
-                <b style="color:{P['tenant']};font-size:1.22rem;">${r['price']:,.0f}</b>
-                <span style="font-size:.78rem;color:{P['muted']};"> / 晚</span>
+                <b style="color:{P['tenant']};font-size:var(--sa-text-metric);">${r['price']:,.0f}</b>
+                <span style="font-size:var(--sa-text-caption);color:{P['muted']};"> / 晚</span>
               </div>
-              <div style="font-size:.77rem;color:{P['ink2']};margin-top:3px;">
+              <div style="font-size:var(--sa-text-caption);color:{P['ink2']};margin-top:3px;">
                 ⭐ {rating_s} · 💬 {int(r['n_reviews'])} 則評論</div>
               <div style="margin-top:8px;display:inline-block;text-align:center;
-                   border:1.5px solid {tcol};background:#F1F7F3;border-radius:9px;
+                   border:1.5px solid {tcol};background:var(--sa-success-bg);border-radius:var(--sa-radius-sm);
                    padding:5px 13px;">
-                <span style="font-size:.8rem;color:{P['ink2']};">👑 綜合推薦 </span>
-                <b style="font-size:1.15rem;color:{tcol};">{_fmt(r['total'])}</b>
-                <span style="font-size:.78rem;color:{P['muted']};"> / 25</span>
+                <span style="font-size:var(--sa-text-caption);color:{P['ink2']};">👑 綜合推薦 </span>
+                <b style="font-size:var(--sa-text-section);color:{tcol};">{_fmt(r['total'])}</b>
+                <span style="font-size:var(--sa-text-caption);color:{P['muted']};"> / 25</span>
               </div>
               <div>{chips}</div>
             </div>
           </div>
-          <div style="font-size:.77rem;color:{P['muted']};margin-top:10px;
+          <div style="font-size:var(--sa-text-caption);color:{P['muted']};margin-top:10px;
                line-height:1.6;">推薦原因：{_html.escape(str(r['reason']))}</div>
         </div>""", unsafe_allow_html=True)
+        # 一張卡片只有一個主要動作(提出租房意願),其餘為次要。
         bc = st.columns(3)
-        if bc[0].button("🔍 查看詳情", key=f"det_{rid}", use_container_width=True):
-            open_detail(rid)
-            st.rerun()
-        if bc[1].button("🏠 提出租房意願", key=f"rent_{rid}", use_container_width=True):
-            st.toast(f"✅ 已送出「{str(r['name'])[:14]}」租房意願！", icon="🏠")
-        if bc[2].button("❤️ 加入收藏", key=f"fav_{rid}", use_container_width=True):
-            st.session_state.setdefault("fav", set()).add(rid)
-            st.toast("❤️ 已加入收藏！", icon="❤️")
+        with bc[0]:
+            if ui_kit.secondary_button("🔍 查看詳情", key=f"det_{rid}",
+                                       stretch=True):
+                open_detail(rid)
+                st.rerun()
+        with bc[1]:
+            if ui_kit.primary_button("🏠 提出租房意願", key=f"rent_{rid}",
+                                     stretch=True):
+                st.toast(f"✅ 已送出「{str(r['name'])[:14]}」租房意願！", icon="🏠")
+        with bc[2]:
+            if ui_kit.secondary_button("❤️ 加入收藏", key=f"fav_{rid}",
+                                       stretch=True):
+                st.session_state.setdefault("fav", set()).add(rid)
+                st.toast("❤️ 已加入收藏！", icon="❤️")
 
     # ── 分頁 ──
     st.markdown("")
     pcol = st.columns([1, 1, 2, 1, 1])
-    if pcol[0].button("◀ 上一頁", disabled=(page <= 1), use_container_width=True):
+    with pcol[0]:
+        _prev = ui_kit.secondary_button("◀ 上一頁", key="t_prev",
+                                        disabled=(page <= 1), stretch=True)
+    if _prev:
         st.session_state["t_page"] = max(1, page - 1)
         st.rerun()
     lo = start + 1
     hi = min(start + PAGE_SIZE, len(M))
     pcol[2].markdown(
-        f"<div style='text-align:center;font-size:.8rem;color:{P['muted']};"
+        f"<div style='text-align:center;font-size:var(--sa-text-caption);color:{P['muted']};"
         f"padding-top:6px;'>顯示 {lo}–{hi} / {len(M)} 房源 ｜ 第 {page} / {n_pages} 頁</div>",
         unsafe_allow_html=True)
-    if pcol[4].button("下一頁 ▶", disabled=(page >= n_pages), use_container_width=True):
+    with pcol[4]:
+        _next = ui_kit.secondary_button("下一頁 ▶", key="t_next",
+                                        disabled=(page >= n_pages), stretch=True)
+    if _next:
         st.session_state["t_page"] = min(n_pages, page + 1)
         st.rerun()
 
@@ -718,14 +724,14 @@ with col_map:
     unit = "／25" if map_dim == "綜合總分" else "／5"
     swatches = "".join(
         f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">'
-        f'<span style="width:14px;height:14px;border-radius:3px;background:{c};'
+        f'<span style="width:14px;height:14px;border-radius:var(--sa-radius-bar);background:{c};'
         f'display:inline-block;"></span>'
-        f'<span style="font-size:.72rem;color:{P["ink2"]};">{lab}</span></div>'
+        f'<span style="font-size:var(--sa-text-caption);color:{P["ink2"]};">{lab}</span></div>'
         for _, lab, c in BANDS)
     st.markdown(
-        f'<div style="border:1px solid {P["border"]};border-radius:10px;'
+        f'<div style="border:1px solid {P["border"]};border-radius:var(--sa-radius-sm);'
         f'padding:8px 12px;background:{P["surface"]};">'
-        f'<div style="font-size:.74rem;font-weight:700;color:{P["ink"]};'
+        f'<div style="font-size:var(--sa-text-caption);font-weight:700;color:{P["ink"]};'
         f'margin-bottom:4px;">{map_dim}{unit}</div>{swatches}'
-        f'<div style="font-size:.68rem;color:{P["muted"]};margin-top:4px;">'
+        f'<div style="font-size:var(--sa-text-label);color:{P["muted"]};margin-top:4px;">'
         f'顏色越綠代表分數越高</div></div>', unsafe_allow_html=True)

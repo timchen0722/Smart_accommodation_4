@@ -133,3 +133,54 @@ def test_design_tokens_has_no_streamlit_dependency():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
     assert "streamlit" not in imported, f"design_tokens 不該依賴 streamlit:{imported}"
+
+
+# ── 分數帶(階段 7:租客入口五科成績單)──────────────────────────
+def test_score_bands_are_descending_and_cover_zero():
+    """門檻必須由高到低,且最後一帶為 0 —— 否則低分房源會落不到任何一帶。"""
+    los = [lo for lo, _, _ in dt.SCORE_BANDS]
+    assert los == sorted(los, reverse=True), f"門檻未由高到低:{los}"
+    assert los[-1] == 0, "最低帶的門檻必須是 0"
+
+
+def test_score_band_colors_are_valid_hex():
+    for lo, name, color in dt.SCORE_BANDS:
+        assert HEX.match(color), f"{name}({lo}) 色碼不合法:{color}"
+
+
+def test_score_band_reuses_semantic_colors():
+    """兩端與中段必須沿用語意色,不可另外調一組綠/黃/紅。"""
+    by_name = {name: color for _, name, color in dt.SCORE_BANDS}
+    assert by_name["優秀"] == dt.COLOR["success"]
+    assert by_name["普通"] == dt.COLOR["warning"]
+    assert by_name["最需比較"] == dt.COLOR["danger"]
+    assert by_name["非常優秀"] == dt.TINT["success"]["fg"]
+
+
+@pytest.mark.parametrize("total,expected", [
+    (25, "非常優秀"), (22, "非常優秀"), (21.9, "優秀"), (18, "優秀"),
+    (17, "普通"), (14, "普通"), (13, "較差"), (10, "較差"),
+    (9, "最需比較"), (0, "最需比較"),
+])
+def test_score_band_boundaries(total, expected):
+    assert dt.score_band(total)[0] == expected
+
+
+def test_score_band_handles_unreadable_input():
+    """None / 非數值不得丟例外,退回最低帶即可(頁面渲染不能因此中斷)。"""
+    for bad in (None, "", "abc", float("nan")):
+        name, color = dt.score_band(bad)
+        assert name in {n for _, n, _ in dt.SCORE_BANDS}
+        assert HEX.match(color)
+
+
+def test_only_design_tokens_defines_score_band_colors():
+    """頁面不得再自己寫一份 5 級色帶(階段 7 把它從租客入口搬進來)。"""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    for f in list((root / "pages").glob("*.py")) + list((root / "modules").glob("*.py")):
+        if f.name == "design_tokens.py":
+            continue
+        src = f.read_text(encoding="utf-8")
+        assert "非常優秀" not in src or "SCORE_BANDS" in src, \
+            f"{f.name} 疑似自帶一份分數帶文案,應改吃 design_tokens.SCORE_BANDS"
