@@ -16,12 +16,17 @@
   👻 隱形危機  體質佳 + 檔期空  → 模型沒抓到,但檔期在流血
   ⚠️ 靠降價撐住 體質差 + 檔期滿  → 短期無虞,查是否賠本衝量
   ✅ 健康      體質佳 + 檔期滿  → 維持現狀
-  ❔ 資料不足  無檔期資料(calendar 與 listings 為不同批次,約 1,600 間無對照)
+  ❔ 檔期資料不足  無檔期資料(calendar 與 listings 為不同批次,約 1,600 間無對照)
+
+文案注意:第五類的名稱一律是「檔期資料不足」(design_tokens.STATUS_NO_DATA)。
+原本 docstring 寫「資料不足」、label 寫「檔期資料不足」,兩者不一致。
 """
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+from modules import design_tokens as T
 
 # 檔期門檻(未來 90 天已訂率)
 BOOKED_HIGH = 0.50
@@ -40,7 +45,7 @@ QUADRANTS = {
     "healthy": {"label": "✅ 健康", "color": "low", "priority": 4,
                 "desc": "體質與檔期皆良好",
                 "action": "維持現狀,持續觀察同商圈行情"},
-    "unknown": {"label": "❔ 檔期資料不足", "color": "muted", "priority": 5,
+    "unknown": {"label": f"❔ {T.STATUS_NO_DATA}", "color": "muted", "priority": 5,
                 "desc": "此房源不在 calendar 對照範圍(兩批資料爬取時間不同)",
                 "action": "僅依模型體質評估判讀"},
 }

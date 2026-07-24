@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from modules import design_tokens as T
 from modules.ui_components import P, sec, mb, note, html_table
 from modules.data_loader import load_listings
 from modules.feature_engineering import load_predictions
@@ -24,8 +25,6 @@ from modules.image_analysis import fake_host_email
 from modules.market_data import capacity_bracket, _canon_amenities
 from modules.pkl_store import load_module as _load_pkl
 
-TIER_ZH = {"red": ("🔴 高風險", "high"), "yellow": ("🟡 觀察", "medium"),
-           "green": ("🟢 安全", "low")}
 AUTO_SEND_LIMIT = 30      # 單次自動寄送上限(避免一次跑太久)
 
 
@@ -295,8 +294,10 @@ def render_notify_center(host_id=None, prob_col="prob", tier_col="tier",
         prob = float(h[prob_col])
         done = st.session_state["processed"].get(hid, False)
         sent = hid in st.session_state["auto_sent"]
-        t_zh, t_key = TIER_ZH.get(h[tier_col], TIER_ZH["yellow"])
-        t_c = P[t_key]
+        # 認不出來的等級一律退回「觀察」,與原本 TIER_ZH.get(..., TIER_ZH["yellow"]) 同義
+        _tier = T.tier_key(h[tier_col]) or "yellow"
+        t_zh = T.tier_label(_tier)
+        t_c = T.tier_color(_tier)
         reason = h.get("_reason") or "風險"
         r_badge = {"風險": ("⚠️ 風險", P["high"]),
                    "空檔": ("📅 空檔", P["primary"]),

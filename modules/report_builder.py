@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from modules import calendar_analytics as ca
+from modules import design_tokens as T
 
 
 def _fmt_money(v) -> str:
@@ -92,7 +93,8 @@ def collect(listing_row, pred_row, listings_df,
 
 def _rule_summary(d: dict) -> str:
     """無 LLM 金鑰時的規則式摘要(以真實檔期調和模型判斷)。"""
-    tier_zh = {"red": "高風險", "yellow": "觀察", "green": "安全"}.get(d["tier"], "")
+    # 純文字摘要不放 emoji;認不出來的等級沿用原本的空字串行為
+    tier_zh = T.tier_label(d["tier"], emoji=False, default="")
     c = d.get("cal")
     q = d.get("quadrant_info")
 
@@ -173,8 +175,7 @@ def ai_summary(d: dict) -> tuple[str, str]:
 
 def to_markdown(d: dict, summary_src: str, summary: str) -> str:
     """組出 Markdown 月報。"""
-    tier_zh = {"red": "🔴 高風險", "yellow": "🟡 觀察",
-               "green": "🟢 安全"}.get(d["tier"], "")
+    tier_zh = T.tier_label(d["tier"], default="")
     c = d.get("cal")
     q = d.get("quadrant_info")
     op = d.get("op_status")
