@@ -396,3 +396,35 @@ def loading(msg: str = "載入中"):
     """統一的載入提示。文案一律「動詞 + …」,不要每處自己編。"""
     with st.spinner(f"{msg} …"):
         yield
+
+
+# ═══════════════════════════════════════════════════════════════
+# 11. 模型口徑說明（全站唯一一份）
+# ═══════════════════════════════════════════════════════════════
+# D2(2026-07-24):同一段技術口徑原本抄在三處(房東入口側欄、後台側欄、
+# 風險環面板),且已經漂移 —— 後台版多了雙層警報門檻與雙輸出說明。
+# 換模時只需要改這裡一處。門檻文字從 RISK_TIERS 推導,不另外寫死。
+MODEL_SPEC = {
+    "algo": "HistGradientBoosting 主力 + XGBoost 對照（Isotonic 校準）",
+    "label": "標籤 vacancy_90 > 0.70",
+    "validation": "GroupKFold（host_id）5 折誠實驗證",
+    "features": "37 核心特徵（雙輸出：90 天風險 / 365 天營收）",
+    "explain": "LIME 可解釋",
+}
+
+
+def model_spec_caption(explain: bool = False) -> str:
+    """回傳技術堆疊說明字串。explain=True 時附上 LIME(房東入口用)。"""
+    tiers = " / ".join(
+        f"{T.RISK_TIERS[k]['emoji']} {T.RISK_TIERS[k]['rule']}"
+        for k in ("red", "yellow"))
+    parts = [MODEL_SPEC["algo"], MODEL_SPEC["label"], f"三層警報（{tiers}）"]
+    if explain:
+        parts.append(MODEL_SPEC["explain"])
+    parts += [MODEL_SPEC["validation"], MODEL_SPEC["features"]]
+    return " · ".join(parts)
+
+
+def model_spec(explain: bool = False) -> None:
+    """以 st.caption 呈現模型口徑。取代三處各自抄一份的技術堆疊說明。"""
+    st.caption(model_spec_caption(explain))

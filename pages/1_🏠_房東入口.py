@@ -115,8 +115,7 @@ with st.sidebar:
                                format_func=lambda v: ROOM_JP.get(v, v))
 
     st.divider()
-    st.caption("HistGradientBoosting+XGBoost(Isotonic 校準)· 標籤 vacancy_90 > 0.70 · "
-               "LIME 可解釋 · GroupKFold 誠實驗證 · 37 核心特徵")
+    ui_kit.model_spec(explain=True)      # D2:三處共用同一份技術口徑
 
 ui_kit.page_header(
     "房東營運面板", icon="🏠",
@@ -241,12 +240,11 @@ def quadrant_summary_table(summary_df):
 # TB1 房東總覽
 # ══════════════════════════════════════════════════════════════
 with TB1:
+    # D5(2026-07-24):不複述側欄已顯示的選取項目,只講側欄看不到的增量 ——
+    # 「這次篩選把名下房源縮到幾間」。
     if _filtered:
-        _dist_txt = "、".join(DIST_PICK) if DIST_PICK else "未選行政區"
-        _room_txt = ("、".join(ROOM_JP.get(v, v) for v in ROOM_PICK)
-                     if ROOM_PICK else "未選房型")
-        st.caption(f"目前篩選:{_dist_txt} · {_room_txt}"
-                   f"({len(SCOPE)}／{len(MY)} 間)")
+        st.caption(f"側欄篩選後顯示 {len(SCOPE)}／{len(MY)} 間"
+                   f"（篩掉 {len(MY) - len(SCOPE)} 間）")
     _gapd = SCOPE["gap_days_30d"].fillna(0)
     _alarm = int((SCOPE["quadrant"] == "alarm").sum())
     _alarm_all = int((MY["quadrant"] == "alarm").sum())
@@ -509,10 +507,8 @@ with TB2:
                 f"基準(現況):機率 {_prob0*100:.0f}%·空屋率 {_vac0*100:.0f}%</div>")
 
         # 等級標籤改用共用 RiskBadge:與房源總表、後台列表、月報同名同色。
-        # 模型名稱吃 ALGO 而非寫死 —— v90 換模後主力已是 HistGradientBoosting,
-        # 原本這行不論 ALGO 為何都顯示「LightGBM」。
-        _algo_zh = {"xgb": "XGBoost", "histgb": "HistGradientBoosting"}.get(
-            ALGO, ALGO)
+        # D2:模型名稱不在這裡重述(側欄的 ui_kit.model_spec 已經寫了),
+        # 這格只留「完整/冷啟動變體」—— 那是隨房源而變、別處看不到的資訊。
         st.markdown(
             f"<div style='text-align:center;background:var(--sa-surface);"
             f"border:1px solid var(--sa-border);"
@@ -529,8 +525,8 @@ with TB2:
             f"font-size:var(--sa-text-caption);margin-top:8px;'>"
             f"環 = 高風險機率 P(空屋率≥60%),紅≥60%·黃≥35%·綠<35%<br>"
             f"預測空屋率(模型A):<b>{_vac*100:.0f}%</b><br>"
-            f"模型:{_algo_zh}·"
-            f"{'冷啟動' if _variant == 'cold' else '完整'}變體</div></div>",
+            f"{'冷啟動' if _variant == 'cold' else '完整'}變體"
+            f"</div></div>",
             unsafe_allow_html=True)
 
         if _changed and abs(_d_prob) < 0.005 and abs(_d_vac) < 0.005:
@@ -623,9 +619,11 @@ with TB2:
                                f"建議僅供參考,請依實際經營狀況判斷。")
                     _use_rules = False
                 else:
-                    note("👆 按上方按鈕即可產生 LLM 個人化建議"
-                         "(調整房價或最低入住天數<b>不會</b>自動觸發,避免重複呼叫 API)。"
-                         "以下先提供規則引擎建議。")
+                    # D6(2026-07-24):原本這裡有一條「👆 按上方按鈕即可產生
+                    # LLM 個人化建議」—— 按鈕就在正上方,屬重述,已刪除。
+                    # 只留「不會自動觸發」這個按鈕本身看不出來的行為。
+                    note("調整房價或最低入住天數<b>不會</b>自動重新產生 LLM 建議"
+                         "(避免重複呼叫 API)。以下先提供規則引擎建議。")
             else:
                 note("未設定 LLM 金鑰(ANTHROPIC_API_KEY / GEMINI_API_KEY),"
                      "以下為規則引擎建議;設定金鑰後即可手動產生 LLM 個人化建議。")
@@ -786,8 +784,11 @@ with TB3:
             overview_metric_card(_kpi_label, _kpi_value, _kpi_note)
 
     ui_kit.section_header("周邊房源分布圖", number="3")
-    mb("點位顏色 = 預測空屋率(綠 <40%・黃 40–69%・紅 ≥70%)· "
-       "虛線圓為比對半徑 · 閃爍點為本房源 · 滑過任一點會同步標示右側列表")
+    # D1:點位顏色改吃三層警報等級,判讀說明直接用全站共用圖例,
+    # 不再另寫一套「空屋率」門檻(原本紅≥70%,與風險環的紅≥60% 打架)。
+    st.markdown(ui_kit.risk_legend_html(), unsafe_allow_html=True)
+    mb("點位顏色 = 三層警報等級 · 虛線圓為比對半徑 · 閃爍點為本房源 · "
+       "滑過任一點會同步標示右側列表")
     from modules.geo_utils import nearest_address as _addr_fn
     from modules import map_view as MV
     try:

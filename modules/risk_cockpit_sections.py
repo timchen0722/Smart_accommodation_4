@@ -252,16 +252,16 @@ def _batch_bar(shown_ids):
     st.markdown(_BATCH_BAR_CSS, unsafe_allow_html=True)
     with st.container(key="rm-batch-bar"):
         c = st.columns([2.3, 0.9, 1.25, 1])
+        # D3(2026-07-24):筆數只在一個地方說 —— 「已選 N」在這行、
+        # 「符合/顯示」在表格上方的 caption;按鈕標籤只寫動作,不再複述數字。
         c[0].markdown(f"**已選 {len(sel)} 間**　將對這些房源產生平台輔導通知"
                       if sel else "產生平台輔導通知　（先勾選左側方框）")
         with c[1]:
-            ui_kit.secondary_button(f"☑ 全選 {len(shown_ids)} 間",
-                                    key="rm_select_all",
+            ui_kit.secondary_button("☑ 全選", key="rm_select_all",
                                     on_click=_select_ids, args=(shown_ids,))
         with c[2]:
-            ui_kit.primary_button(f"✉️ 批次發送 {len(sel)} 筆",
-                                  key="rm_batch_send", disabled=not sel,
-                                  on_click=_send_batch)
+            ui_kit.primary_button("✉️ 批次發送", key="rm_batch_send",
+                                  disabled=not sel, on_click=_send_batch)
         with c[3]:
             ui_kit.secondary_button("清除選取", key="rm_batch_clear",
                                     disabled=not sel,
@@ -311,8 +311,8 @@ def _render_listings(df: pd.DataFrame, cm: float):
         return
 
     _batch_bar(shown_ids)
-    note("點<b>房源ID</b>(藍色連結)展開 LIME 風險原因與單筆派信;"
-         "勾選左側方框後,用<b>上方批次派信列</b>發送。")
+    # D4:派信流程由上方批次列自己說明,這裡只講「表格本身怎麼用」。
+    note("點<b>房源ID</b>(藍色連結)可展開該房源的 LIME 風險原因。")
     _listing_rows(shown)
     st.divider()
     _notify_log_section()

@@ -26,18 +26,14 @@ PLATFORM_STYLE = {
     "Booking": {"label": "Booking.com", "color": T.PLATFORM_COLOR["Booking"]},
     "ddroom": {"label": "DD租租網", "color": T.PLATFORM_COLOR["ddroom"]},
 }
-# 空屋率分級色(周邊 Airbnb 房源)—— 門檻對齊三層警報的語意色
-RISK_COLOR = [(0.40, T.tier_color("green")), (0.70, T.tier_color("yellow")),
-              (1.01, T.tier_color("red"))]
+def _risk_color(tier) -> str:
+    """點位顏色 = 三層警報等級色。
 
-
-def _risk_color(v) -> str:
-    if v is None or (isinstance(v, float) and np.isnan(v)):
-        return T.COLOR["muted"]
-    for hi, c in RISK_COLOR:
-        if float(v) < hi:
-            return c
-    return RISK_COLOR[-1][1]
+    D1(2026-07-24):本檔原本自帶一組「空屋率」門檻(綠<40%/黃40–69%/紅≥70%),
+    與風險環的「機率」門檻(紅≥60%/黃≥35%)不同 —— 同一頁、同一組顏色卻是
+    兩種意思。改為直接吃上游算好的 `tier`,全站只剩 RISK_TIERS 一套門檻。
+    """
+    return T.tier_color(tier) if T.tier_key(tier) else T.COLOR["muted"]
 
 
 def _fmt(v, unit="", digits=0):
@@ -70,7 +66,8 @@ def build_points(own, nearby: pd.DataFrame, addr_fn) -> tuple[dict, list]:
             "vac_raw": float(r.get("vac_pred") or 0),
             "room": str(r.get("room_type") or ""),
             "dist": int(r.get("dist_m") or 0),
-            "color": _risk_color(r.get("vac_pred")),
+            "tier_zh": T.tier_label(r.get("tier"), default="—"),
+            "color": _risk_color(r.get("tier")),
         })
     pts.sort(key=lambda x: x["dist"])
     return own_pt, pts
@@ -183,6 +180,7 @@ PTS.forEach((p, i) => {
     <div class="tt-r"><span class="tt-k">地址</span> ${p.addr}</div>
     <div class="tt-r"><span class="tt-k">距本房源</span> ${p.dist} 公尺
       <span class="tt-k">定價</span> ${p.price}</div>
+    <div class="tt-r"><span class="tt-k">警報等級</span> ${p.tier_zh}</div>
     <div class="tt-r"><span class="tt-k">預測空屋率</span> ${p.vac}</div>`,
     {className:'zh', direction:'top', offset:[0,-6]});
   m.on('mouseover', () => focusItem(i, true));
@@ -223,7 +221,7 @@ PTS.forEach((p, i) => {
   d.className = 'item'; d.id = 'it' + i;
   d.innerHTML = `<div class="t"><span class="dot" style="background:${p.color}"></span>${p.name}</div>
     <div class="s">${p.addr}</div>
-    <div class="s">距離 ${p.dist} 公尺・${p.price}・空屋率 ${p.vac}</div>`;
+    <div class="s">距離 ${p.dist} 公尺・${p.price}・${p.tier_zh}・空屋率 ${p.vac}</div>`;
   d.onmouseenter = () => { highlight(i, true);  markers[i].openTooltip(); };
   d.onmouseleave = () => { highlight(i, false); markers[i].closeTooltip(); };
   d.onclick = () => map.setView([p.lat, p.lon], 17);
@@ -253,6 +251,7 @@ def render(own, nearby: pd.DataFrame, comp: pd.DataFrame, radius_m: float,
     """渲染互動地圖 + 連動列表。
 
     own      本房源(Series,需含 id/name/latitude/longitude/price/vac_pred)
+             nearby 另需 `tier` 欄(點位顏色來源;缺欄位時該點顯示為灰)
     nearby   周邊 Airbnb 房源(需含 dist_m)
     comp     跨平台競品(需含 platform/lat/lon/title/price_raw/price_pp_day/dist_m)
     addr_fn  逆地理函式 (lat, lon) -> 地址字串

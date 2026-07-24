@@ -89,9 +89,7 @@ with st.sidebar:
         _sidebar_commission()
 
     st.divider()
-    st.caption("技術堆疊:HistGradientBoosting 主力 + XGBoost 對照(Isotonic 校準)· "
-               "標籤 vacancy_90 > 0.70 · 雙層警報(紅 0.60 / 黃 0.35)· "
-               "GroupKFold(host_id) 5 折誠實驗證 · 37 核心特徵(雙輸出:90天風險/365天營收)")
+    ui_kit.model_spec()                  # D2:三處共用同一份技術口徑
 
 ui_kit.page_header(
     "Airbnb 平台營運後台", icon="📊",
