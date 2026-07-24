@@ -32,6 +32,7 @@ from modules import design_tokens as T
 BOOKED_HIGH = 0.50
 BOOKED_LOW = 0.20
 
+
 QUADRANTS = {
     "alarm": {"label": "🚨 真警報", "color": "high", "priority": 1,
               "desc": "房子本身條件不好,未來也幾乎沒人訂——兩邊都亮紅燈,最該優先處理",
