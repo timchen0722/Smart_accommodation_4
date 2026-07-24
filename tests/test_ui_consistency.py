@@ -102,3 +102,45 @@ def test_room_type_translation_single_source():
         if literal.search(_src(path)):
             offenders.append(path.name)
     assert not offenders, f"這些檔案自己複製了房型中譯:{offenders}"
+
+
+def test_every_css_variable_used_in_app_is_declared():
+    """全站 var(--sa-*) 都必須在 design_tokens.css_variables() 裡有定義。
+
+    階段 8 把大量字面色碼/字級/圓角改成 CSS 變數,一旦名字打錯,瀏覽器會靜默
+    退回繼承值 —— 畫面不會報錯,只會悄悄變醜。這個測試就是那道防線。
+    """
+    import re
+    from pathlib import Path
+
+    from modules import design_tokens as dt
+
+    declared = set(re.findall(r"(--sa-[a-z0-9-]+)\s*:", dt.css_variables()))
+    root = Path(__file__).resolve().parent.parent
+    missing = {}
+    for f in list((root / "pages").glob("*.py")) + list((root / "modules").glob("*.py")):
+        used = set(re.findall(r"var\((--sa-[a-z0-9-]+)\)",
+                              f.read_text(encoding="utf-8")))
+        bad = used - declared
+        if bad:
+            missing[f.name] = sorted(bad)
+    assert not missing, f"用到未定義的 CSS 變數:{missing}"
+
+
+def test_plotly_colors_never_use_css_variables():
+    """Plotly 吃不到 CSS 變數,圖表配色必須用 token 的 Python 值。
+
+    階段 8 曾誤把 color_continuous_scale 換成 var(--sa-*),圖會靜默變色。
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    PLOTLY_ARGS = ("marker_color", "color_continuous_scale", "color_discrete_map",
+                   "colorscale", "line_color", "fillcolor")
+    offenders = {}
+    for f in list((root / "pages").glob("*.py")) + list((root / "modules").glob("*.py")):
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if "var(--sa-" in line and any(a in line for a in PLOTLY_ARGS):
+                offenders.setdefault(f.name, []).append(line.strip()[:80])
+    assert not offenders, f"Plotly 參數用了 CSS 變數:{offenders}"

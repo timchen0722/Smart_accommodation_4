@@ -29,11 +29,14 @@ def test_ui_kit_contains_no_hardcoded_hex_colors():
 
 
 def test_ui_kit_contains_no_hardcoded_font_sizes():
-    """字級一律走 var(--sa-text-*);例外只允許 .sa-empty-icon 與序號方塊。"""
+    """字級一律走 var(--sa-text-*)。
+
+    階段 8 之前還留著 .sa-empty-icon(1.6rem)與序號方塊(.9rem)兩個字面值,
+    現已一併改吃 token,故這裡收緊為「一個都不准有」。
+    """
     src = inspect.getsource(K)
     literal = re.findall(r"font-size:\s*[0-9.]+(?:rem|px|em)", src)
-    assert sorted(literal) == ["font-size:.9rem", "font-size:1.6rem"], (
-        f"非預期的寫死字級:{literal}")
+    assert literal == [], f"非預期的寫死字級:{literal}"
 
 
 def test_component_css_defines_every_token_it_uses():

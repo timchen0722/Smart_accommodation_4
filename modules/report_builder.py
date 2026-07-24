@@ -279,10 +279,12 @@ def to_html(md_text: str, title: str) -> str:
     return f"""<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8">
 <title>{_html.escape(title)}</title>
 <style>
+{T.css_variables()}
 body{{font-family:"Noto Sans TC","Microsoft JhengHei",sans-serif;
- background:#F8F7F5;color:#2A2A2A;max-width:860px;margin:32px auto;padding:0 20px;
- line-height:1.75;}}
-pre{{white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid #E8E4DE;
- border-radius:12px;padding:22px 26px;font-family:inherit;font-size:.92rem;}}
+ background:var(--sa-bg);color:var(--sa-ink);max-width:860px;margin:32px auto;
+ padding:0 20px;line-height:1.75;}}
+pre{{white-space:pre-wrap;word-break:break-word;background:#fff;
+ border:1px solid var(--sa-border);border-radius:var(--sa-radius-md);
+ padding:22px 26px;font-family:inherit;font-size:var(--sa-text-body);}}
 @media print{{body{{background:#fff;}} pre{{border:none;}}}}
 </style></head><body><pre>{body}</pre></body></html>"""

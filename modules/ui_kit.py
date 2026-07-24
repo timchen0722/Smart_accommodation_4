@@ -43,7 +43,7 @@ _COMPONENT_CSS = """
 .sa-section-num{display:inline-flex;align-items:center;justify-content:center;
   width:26px;height:26px;flex:none;border-radius:var(--sa-radius-sm);
   background:var(--sa-primary);color:var(--sa-surface);
-  font-size:.9rem;font-weight:800;}
+  font-size:var(--sa-text-body);font-weight:800;}
 .sa-section-title{color:var(--sa-ink);font-size:var(--sa-text-section);
   font-weight:var(--sa-text-section-weight);
   letter-spacing:var(--sa-text-section-ls);line-height:1.35;}
@@ -113,7 +113,7 @@ _COMPONENT_CSS = """
   gap:var(--sa-space-2);padding:var(--sa-space-8) var(--sa-space-4);
   background:var(--sa-card);border:1px dashed var(--sa-border2);
   border-radius:var(--sa-radius-md);text-align:center;}
-.sa-empty-icon{font-size:1.6rem;line-height:1;}
+.sa-empty-icon{font-size:var(--sa-text-page-title);line-height:1;}
 .sa-empty-msg{color:var(--sa-ink2);font-size:var(--sa-text-body);
   font-weight:700;line-height:1.5;}
 .sa-empty-hint{color:var(--sa-muted);font-size:var(--sa-text-caption);

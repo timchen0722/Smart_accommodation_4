@@ -39,9 +39,14 @@ def test_no_duplicate_color_values():
 
 
 # ── 字級 / 間距 / 圓角 ──────────────────────────────────────────
-def test_type_scale_is_eight_steps():
-    """字級刻意收斂成 8 階;要新增請先確認不是既有階級能表達的。"""
-    assert len(dt.TYPE) == 8
+def test_type_scale_is_nine_steps():
+    """字級刻意收斂成 9 階;要新增請先確認不是既有階級能表達的。
+
+    原本 8 階,階段 8 加入 metric_hero(2.6rem)—— 未來檔期的「90 天已訂率」
+    是整段唯一的主角數值,原本在 calendar_sections 寫死 2.6rem。它是資料值
+    而非裝飾,所以收成 token 而不是列入 TYPE_EXEMPT。
+    """
+    assert len(dt.TYPE) == 9
     for name, spec in dt.TYPE.items():
         size, weight, _ls = spec
         assert size.endswith("rem"), f"TYPE[{name}] 字級應以 rem 表示"

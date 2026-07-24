@@ -18,19 +18,22 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+from modules import design_tokens as T
+
 # 平台識別色(依需求指定)
 PLATFORM_STYLE = {
-    "591": {"label": "591租屋網", "color": "#8B5CF6"},          # 紫
-    "Booking": {"label": "Booking.com", "color": "#2563EB"},     # 藍
-    "ddroom": {"label": "DD租租網", "color": "#4B4B4B"},         # 深灰
+    "591": {"label": "591租屋網", "color": T.PLATFORM_COLOR["591"]},
+    "Booking": {"label": "Booking.com", "color": T.PLATFORM_COLOR["Booking"]},
+    "ddroom": {"label": "DD租租網", "color": T.PLATFORM_COLOR["ddroom"]},
 }
-# 空屋率分級色(周邊 Airbnb 房源)
-RISK_COLOR = [(0.40, "#5B9E73"), (0.70, "#C49A4A"), (1.01, "#C4645A")]
+# 空屋率分級色(周邊 Airbnb 房源)—— 門檻對齊三層警報的語意色
+RISK_COLOR = [(0.40, T.tier_color("green")), (0.70, T.tier_color("yellow")),
+              (1.01, T.tier_color("red"))]
 
 
 def _risk_color(v) -> str:
     if v is None or (isinstance(v, float) and np.isnan(v)):
-        return "#9A9490"
+        return T.COLOR["muted"]
     for hi, c in RISK_COLOR:
         if float(v) < hi:
             return c
@@ -102,40 +105,41 @@ _HTML = """
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
+__TOKENS__
   html,body{margin:0;padding:0;font-family:"Noto Sans TC",-apple-system,sans-serif;
-    background:#F8F7F5;color:#2A2A2A;}
+    background:var(--sa-bg);color:var(--sa-ink);}
   .wrap{display:flex;gap:10px;height:__H__px;}
-  #map{flex:1 1 auto;border:1px solid #E8E4DE;border-radius:10px;}
+  #map{flex:1 1 auto;border:1px solid var(--sa-border);border-radius:var(--sa-radius-sm);}
   .side{width:308px;display:flex;flex-direction:column;
-    border:1px solid #E8E4DE;border-radius:10px;background:#fff;overflow:hidden;}
-  .side h4{margin:0;padding:9px 13px;font-size:.79rem;letter-spacing:.06em;
-    color:#9A9490;background:#F2F0EC;border-bottom:1px solid #E8E4DE;font-weight:700;}
+    border:1px solid var(--sa-border);border-radius:var(--sa-radius-sm);background:#fff;overflow:hidden;}
+  .side h4{margin:0;padding:9px 13px;font-size:var(--sa-text-caption);letter-spacing:.06em;
+    color:var(--sa-muted);background:var(--sa-neutral-bg);border-bottom:1px solid var(--sa-border);font-weight:700;}
   .list{overflow-y:auto;flex:1;}
-  .item{padding:8px 13px;border-bottom:1px solid #F0EDE8;cursor:pointer;
+  .item{padding:8px 13px;border-bottom:1px solid var(--sa-neutral-bg);cursor:pointer;
     transition:background .12s,border-left-color .12s;border-left:3px solid transparent;}
-  .item:hover{background:#F8F7F5;}
-  .item.on{background:#FFF6E8;border-left-color:#C4645A;}
-  .t{font-size:.8rem;font-weight:600;color:#2A2A2A;white-space:nowrap;
+  .item:hover{background:var(--sa-bg);}
+  .item.on{background:var(--sa-warning-bg);border-left-color:var(--sa-danger);}
+  .t{font-size:var(--sa-text-caption);font-weight:600;color:var(--sa-ink);white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;}
-  .s{font-size:.72rem;color:#9A9490;margin-top:2px;line-height:1.5;}
+  .s{font-size:var(--sa-text-label);color:var(--sa-muted);margin-top:2px;line-height:1.5;}
   .dot{display:inline-block;width:8px;height:8px;border-radius:50%;
     margin-right:5px;vertical-align:middle;}
-  .empty{padding:16px 13px;font-size:.78rem;color:#9A9490;}
+  .empty{padding:16px 13px;font-size:var(--sa-text-caption);color:var(--sa-muted);}
   /* 本房源閃爍標記 */
   .me-wrap{position:relative;width:20px;height:20px;}
   .me-core{position:absolute;left:4px;top:4px;width:12px;height:12px;
-    border-radius:50%;background:#2A2A2A;border:2px solid #fff;
-    box-shadow:0 0 0 1px #2A2A2A;}
+    border-radius:50%;background:var(--sa-ink);border:2px solid #fff;
+    box-shadow:0 0 0 1px var(--sa-ink);}
   .me-ring{position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;
     background:rgba(196,100,90,.55);animation:pulse 1.6s ease-out infinite;}
   @keyframes pulse{0%{transform:scale(.5);opacity:.9;}
     70%{transform:scale(2.2);opacity:0;}100%{opacity:0;}}
-  .leaflet-tooltip.zh{font-family:"Noto Sans TC",sans-serif;font-size:.76rem;
-    line-height:1.65;padding:7px 10px;border-radius:7px;border:1px solid #D4CFC8;
+  .leaflet-tooltip.zh{font-family:"Noto Sans TC",sans-serif;font-size:var(--sa-text-caption);
+    line-height:1.65;padding:7px 10px;border-radius:var(--sa-radius-sm);border:1px solid var(--sa-border2);
     box-shadow:0 4px 14px rgba(0,0,0,.12);}
-  .tt-t{font-weight:700;color:#2A2A2A;margin-bottom:3px;}
-  .tt-r{color:#54514E;}
-  .tt-k{color:#9A9490;}
+  .tt-t{font-weight:700;color:var(--sa-ink);margin-bottom:3px;}
+  .tt-r{color:var(--sa-ink2);}
+  .tt-k{color:var(--sa-muted);}
 </style></head><body>
 <div class="wrap">
   <div id="map"></div>
@@ -154,8 +158,8 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
 
 // 半徑虛線圓
 const ring = L.circle([OWN.lat, OWN.lon], {
-  radius: RADIUS, color:'#4E7FB0', weight:1.6, opacity:.85,
-  dashArray:'7 7', fill:true, fillColor:'#4E7FB0', fillOpacity:.045
+  radius: RADIUS, color:'__PRIMARY__', weight:1.6, opacity:.85,
+  dashArray:'7 7', fill:true, fillColor:'__PRIMARY__', fillOpacity:.045
 }).addTo(map);
 map.fitBounds(ring.getBounds(), {padding:[18,18]});
 
@@ -230,7 +234,7 @@ function highlight(i, on) {
   const el = document.getElementById('it' + i);
   if (el) el.classList.toggle('on', on);
   const m = markers[i];
-  if (m) m.setStyle(on ? {radius:10, weight:2.6, color:'#C4645A', fillOpacity:1}
+  if (m) m.setStyle(on ? {radius:10, weight:2.6, color:'__DANGER__', fillOpacity:1}
                        : {radius:6, weight:1.4, color:'#fff', fillOpacity:.9});
 }
 function focusItem(i, on) {
@@ -261,5 +265,9 @@ def render(own, nearby: pd.DataFrame, comp: pd.DataFrame, radius_m: float,
             .replace("__PTS__", json.dumps(pts, ensure_ascii=False))
             .replace("__COMP__", json.dumps(comps, ensure_ascii=False))
             .replace("__RADIUS__", str(int(radius_m)))
-            .replace("__H__", str(int(height))))
+            .replace("__H__", str(int(height)))
+            # iframe 有自己的文件,吃不到父頁的 :root;token 變數要一起送進去
+            .replace("__TOKENS__", T.css_variables())
+            .replace("__PRIMARY__", T.COLOR["primary"])
+            .replace("__DANGER__", T.COLOR["danger"]))
     components.html(page, height=height + 12, scrolling=False)

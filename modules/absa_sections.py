@@ -19,6 +19,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+from modules import design_tokens as T
 from modules.ui_components import P, apply_theme, html_table, mb, note, sec
 
 DATA = Path(__file__).resolve().parent.parent / "data"
@@ -135,7 +136,7 @@ def render_listing_absa(listing_id: int, district: str | None = None):
                 note(f"⚠️ <b>{r['aspect']}</b>:負評率 {r['neg_ratio']:.0%}"
                      f"(市場 {r['市場負評率']:.0%},高 "
                      f"{r['差距']*100:.0f} 個百分點)<br>"
-                     f"<span style='font-size:.78rem;'>建議:"
+                     f"<span style='font-size:var(--sa-text-caption);'>建議:"
                      f"{ASPECT_TIP.get(r['aspect'], '針對此面向改善')}</span>")
         for _, r in best.iterrows():
             if r["差距"] < -0.01:
@@ -173,9 +174,9 @@ def _render_summary(listing_id: int, district: str | None = None,
     hit = store.get(int(listing_id))
 
     st.markdown(
-        f"<div style='background:{P['mbg']};border:1px solid #C8DCF0;"
-        f"border-radius:10px;padding:12px 16px;margin:6px 0 10px;"
-        f"font-size:.87rem;line-height:1.85;color:{P['ink2']};'>"
+        f"<div style='background:{P['mbg']};border:1px solid var(--sa-primary-border);"
+        f"border-radius:var(--sa-radius-sm);padding:12px 16px;margin:6px 0 10px;"
+        f"font-size:var(--sa-text-body);line-height:1.85;color:{P['ink2']};'>"
         f"<b>📝 評論自動摘要</b>({'LLM 生成' if hit else '規則版'})<br>"
         f"{hit['text'] if hit else rs.rule_summary(f)}</div>",
         unsafe_allow_html=True)
@@ -222,7 +223,7 @@ def render_market_absa():
     with c1:
         fig = px.bar(city, x="neg_ratio", y="aspect", orientation="h",
                      color="neg_ratio",
-                     color_continuous_scale=["#5B9E73", "#C49A4A", "#C4645A"],
+                     color_continuous_scale=[T.COLOR["success"], T.COLOR["warning"], T.COLOR["danger"]],
                      text=city["neg_ratio"].map("{:.1%}".format))
         apply_theme(fig, h=430).update_layout(
             title="全市各面向負評率(越右越需改善)",
@@ -232,7 +233,7 @@ def render_market_absa():
     with c2:
         fig = px.scatter(city, x="mentions", y="neg_ratio", size="mentions",
                          color="neg_ratio", text="aspect",
-                         color_continuous_scale=["#5B9E73", "#C49A4A", "#C4645A"],
+                         color_continuous_scale=[T.COLOR["success"], T.COLOR["warning"], T.COLOR["danger"]],
                          size_max=45)
         fig.update_traces(textposition="top center", textfont_size=10)
         fig.add_hline(y=city["neg_ratio"].median(), line_dash="dot",
@@ -251,7 +252,7 @@ def render_market_absa():
     dist = mk[mk["scope"] == "行政區"]
     piv = dist.pivot_table(index="group", columns="aspect", values="neg_ratio")
     fig = px.imshow(piv, text_auto=".0%", aspect="auto",
-                    color_continuous_scale=["#5B9E73", "#F5F1EA", "#C4645A"],
+                    color_continuous_scale=[T.COLOR["success"], T.TINT["neutral"]["bg"], T.COLOR["danger"]],
                     labels={"color": "負評率"})
     apply_theme(fig, h=470).update_layout(
         title="行政區 × 面向 負評率(紅=該區此面向問題較多)",
@@ -269,8 +270,8 @@ def render_market_absa():
             st.markdown(
                 f"<div style='background:{P['surface']};border-left:3px solid "
                 f"{P['high']};padding:8px 12px;margin:6px 0;border-radius:0 8px 8px 0;"
-                f"font-size:.82rem;color:{P['ink2']};'>"
-                f"「{str(r['text'])}」<span style='color:{P['muted']};font-size:.72rem;'>"
+                f"font-size:var(--sa-text-body);color:{P['ink2']};'>"
+                f"「{str(r['text'])}」<span style='color:{P['muted']};font-size:var(--sa-text-label);'>"
                 f" — 房源 #{int(r['listing_id'])}</span></div>",
                 unsafe_allow_html=True)
 

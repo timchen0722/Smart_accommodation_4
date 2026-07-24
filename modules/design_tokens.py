@@ -46,7 +46,33 @@ TINT = {
     "warning": {"bg": "#FDF5E4", "fg": "#A07A20", "border": "#E3D5B0"},
     "success": {"bg": "#EAF5EE", "fg": "#3D7A55", "border": "#BFDCC9"},
     "primary": {"bg": "#EEF4FB", "fg": "#3D6B96", "border": "#C8DCF0"},
+    # secondary(平台/後台身分)原本只有 ui_components 的 .overview-metric-note-accent
+    # 自帶一組 #F2EDF7/#D9CDE6,補進來讓五個語意角色都有完整 tint 三件組。
+    "secondary": {"bg": "#F2EDF7", "fg": "#6B5B88", "border": "#D9CDE6"},
     "neutral": {"bg": "#F2F0EC", "fg": "#505050", "border": "#E8E4DE"},
+}
+
+# 日曆「已訂」格的藍 —— primary 的淡階。刻意不用紅:紅在全站代表「要處理」,
+# 留給空檔警示。經對比實測(日期文字 6.06、與空房格互比 2.08)後定案。
+CAL_BOOKED_BLUE = "#8AACCD"
+
+# 跨平台品牌識別色 —— 品牌資產,不是語意色(改這裡不會改變任何風險判讀)。
+# 原本 map_view.PLATFORM_STYLE 與 platform_detail.PLATFORM 各寫一份,值相同、
+# 用途相同,只有欄位名不同;統一放這裡,兩邊都從這裡取。
+PLATFORM_COLOR = {
+    "Airbnb":  COLOR["danger"],   # 本平台沿用主紅
+    "Booking": "#2563EB",         # 藍
+    "591":     "#8B5CF6",         # 紫
+    "ddroom":  "#4B4B4B",         # 深灰
+}
+
+# 首頁 Hero 插畫用色 —— 不是 UI 狀態語意色,不參與 tint/badge/圖表配色。
+# 放這裡只是為了不讓 ui_components 的 CSS 再裸寫一次(TYPE_EXEMPT 已把
+# 「index.py 首頁 Hero」列為字級白名單,配色同理)。
+HERO = {
+    "sky": "#7ED6E8", "leaf": "#BFE08A", "sun": "#F7D774",   # 右半漸層
+    "ink": "#256048", "ink2": "#20543E", "ink3": "#1C4A36",  # 漸層上的深綠字
+    "paper_from": "#FBFAF8", "paper_to": "#EFEDE9",          # 左半米白漸層
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -59,6 +85,10 @@ TYPE = {
     "section":    ("1.15rem",  800, ".01em"),    # 區塊標題
     "card_title": ("1rem",     700, "normal"),   # 卡片標題
     "metric":     ("1.35rem",  800, "normal"),   # 統計卡數值(配 tabular-nums)
+    # 單一主角級數值(整段只放一個數字時用,如未來檔期的「90 天已訂率」)。
+    # 原本 calendar_sections 自己寫 2.6rem;它是資料值而非裝飾,所以收成 token
+    # 而不是丟進 TYPE_EXEMPT —— 代價是字級階數由 8 階變 9 階。
+    "metric_hero": ("2.6rem",  800, "normal"),
     "body":       ("0.875rem", 400, "normal"),   # 內文
     "caption":    ("0.78rem",  400, "normal"),   # 輔助說明
     "label":      ("0.7rem",   700, ".07em"),    # 表頭、KPI 標籤、膠囊

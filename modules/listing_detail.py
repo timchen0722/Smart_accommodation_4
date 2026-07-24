@@ -72,14 +72,14 @@ def summary_html(L, show_name: bool = True) -> str:
     addr = nearest_address(lat, lon)
     hood = L.get("neighbourhood", "")
     hood = str(hood) if pd.notna(hood) else ""
-    name = (f'<div style="font-size:1.05rem;font-weight:700;color:{P["ink"]};'
+    name = (f'<div style="font-size:var(--sa-text-card-title);font-weight:700;color:{P["ink"]};'
             f'margin-bottom:6px;">{_html.escape(str(L["name"]))}</div>'
             if show_name else "")
     # 注意:回傳字串不可有縮排或空行 —— 內嵌到其他 HTML 區塊時,
     # 縮排 4 個空白會被 Markdown 當成程式碼區塊而把原始碼直接印出來。
     return (
         f'{name}'
-        f'<div style="font-size:.8rem;color:{P["muted"]};line-height:1.9;">'
+        f'<div style="font-size:var(--sa-text-caption);color:{P["muted"]};line-height:1.9;">'
         f'📍 <b>區域位置：</b>{L.get("neighbourhood_cleansed", "")}'
         f'{("｜" + hood) if hood else ""}<br>'
         f'🏠 <b>推估地址：</b>{addr or "—"}<br>'
@@ -87,7 +87,7 @@ def summary_html(L, show_name: bool = True) -> str:
         f'🛏 {room_zh} ｜ 👥 可住 {_gi(L.get("accommodates"))} 人 ｜ '
         f'🛁 {_gi(L.get("bathrooms_count"))} 衛浴 ｜ '
         f'🛏 {_gi(L.get("beds"))} 床<br>'
-        f'💰 <b style="color:{P["tenant"]};font-size:1.05rem;">'
+        f'💰 <b style="color:{P["tenant"]};font-size:var(--sa-text-card-title);">'
         f'${float(L["price"]):,.0f}</b> / 晚 ｜ ⭐ {rating_s} ｜ '
         f'💬 {_gi(L.get("number_of_reviews"))} 則評論'
         f'</div>')
@@ -130,13 +130,13 @@ def render_detail(L, show_actions: bool = True):
                        else (P["medium"] if lab == "尚可" else P["high"]))
                 st.markdown(
                     f'<div style="background:{P["surface"]};border:1px solid '
-                    f'{P["border"]};border-top:3px solid {col};border-radius:10px;'
+                    f'{P["border"]};border-top:3px solid {col};border-radius:var(--sa-radius-sm);'
                     f'padding:12px 14px;">'
-                    f'<div style="font-size:.72rem;color:{P["muted"]};">'
+                    f'<div style="font-size:var(--sa-text-label);color:{P["muted"]};">'
                     f'AI 照片清晰度</div>'
-                    f'<div style="font-size:1.4rem;font-weight:800;color:{col};">'
+                    f'<div style="font-size:var(--sa-text-metric);font-weight:800;color:{col};">'
                     f'{lab}</div>'
-                    f'<div style="font-size:.74rem;color:{P["muted"]};">清晰機率 '
+                    f'<div style="font-size:var(--sa-text-caption);color:{P["muted"]};">清晰機率 '
                     f'{im["prob"] * 100:.0f}%</div></div>', unsafe_allow_html=True)
                 m = st.columns(2)
                 m[0].metric("Laplacian", f"{im['raw']['laplacian_var']:,.0f}")
@@ -161,8 +161,8 @@ def render_detail(L, show_actions: bool = True):
     if ams:
         chips = "".join(
             f'<span style="display:inline-block;background:{P["tag_bg"]};'
-            f'border:1px solid {P["border"]};border-radius:14px;padding:3px 11px;'
-            f'margin:3px 4px 0 0;font-size:.74rem;color:{P["ink2"]};">'
+            f'border:1px solid {P["border"]};border-radius:var(--sa-radius-md);padding:3px 11px;'
+            f'margin:3px 4px 0 0;font-size:var(--sa-text-caption);color:{P["ink2"]};">'
             f'{_html.escape(zh_amenity(a))}</span>' for a in ams)
         st.markdown(f"<div style='line-height:2.1;'>{chips}</div>",
                     unsafe_allow_html=True)
@@ -192,7 +192,7 @@ def render_detail(L, show_actions: bool = True):
                         for x in snips)
         st.markdown(
             f'<div style="max-height:220px;overflow-y:auto;border:1px solid '
-            f'{P["border"]};border-radius:10px;padding:8px 12px;font-size:.74rem;'
+            f'{P["border"]};border-radius:var(--sa-radius-sm);padding:8px 12px;font-size:var(--sa-text-caption);'
             f'color:{P["ink2"]};line-height:1.6;">{items}</div>',
             unsafe_allow_html=True)
     else:
@@ -226,15 +226,15 @@ def hover_card_html(L, extra_lines: list[str] | None = None) -> str:
     addr = nearest_address(lat, lon) or "—"
     url = str(L.get("picture_url", "") or "")
     img = (f'<img src="{url}" referrerpolicy="no-referrer" '
-           f'style="width:100%;height:104px;object-fit:cover;border-radius:8px;'
+           f'style="width:100%;height:104px;object-fit:cover;border-radius:var(--sa-radius-sm);'
            f'margin-bottom:8px;background:{P["tag_bg"]};" '
            f'onerror="this.style.display=\'none\'">'
            if url.startswith("http") else "")
     ams = _amenities(L.get("amenities", "[]"))
     chips = "".join(
         f'<span style="display:inline-block;background:{P["tag_bg"]};'
-        f'border-radius:10px;padding:1px 7px;margin:2px 3px 0 0;'
-        f'font-size:.68rem;color:{P["ink2"]};">{_html.escape(zh_amenity(a))}</span>'
+        f'border-radius:var(--sa-radius-sm);padding:1px 7px;margin:2px 3px 0 0;'
+        f'font-size:var(--sa-text-label);color:{P["ink2"]};">{_html.escape(zh_amenity(a))}</span>'
         for a in ams[:6])
     extra = "".join(f"<div>{x}</div>" for x in (extra_lines or []))
     return f"""
@@ -242,9 +242,9 @@ def hover_card_html(L, extra_lines: list[str] | None = None) -> str:
   <span class="hv-anchor">ⓘ 滑鼠停留檢視摘要</span>
   <div class="hv-card">
     {img}
-    <div style="font-weight:700;font-size:.84rem;color:{P['ink']};
+    <div style="font-weight:700;font-size:var(--sa-text-body);color:{P['ink']};
          line-height:1.4;margin-bottom:5px;">{_html.escape(str(L['name']))[:44]}</div>
-    <div style="font-size:.73rem;color:{P['muted']};line-height:1.8;">
+    <div style="font-size:var(--sa-text-caption);color:{P['muted']};line-height:1.8;">
       📍 {L.get('neighbourhood_cleansed', '')}｜{L.get('room_type_zh') or L.get('room_type', '')}<br>
       🏠 {addr}<br>
       🧭 {lat:.5f}, {lon:.5f}<br>
@@ -255,7 +255,7 @@ def hover_card_html(L, extra_lines: list[str] | None = None) -> str:
       {extra}
     </div>
     <div style="margin-top:6px;">{chips}</div>
-    <div style="font-size:.68rem;color:{P['muted']};margin-top:7px;
+    <div style="font-size:var(--sa-text-label);color:{P['muted']};margin-top:7px;
          border-top:1px dashed {P['border']};padding-top:5px;">
       完整設施、周遭 1KM 機能與近期評論請按「查看詳情」</div>
   </div>
@@ -265,11 +265,11 @@ def hover_card_html(L, extra_lines: list[str] | None = None) -> str:
 HOVER_CSS = f"""
 <style>
 .hv-wrap{{position:relative;display:inline-block;}}
-.hv-anchor{{font-size:.72rem;color:{P['primary']};cursor:help;
+.hv-anchor{{font-size:var(--sa-text-label);color:{P['primary']};cursor:help;
   border-bottom:1px dashed {P['primary']};}}
 .hv-card{{visibility:hidden;opacity:0;position:absolute;z-index:9999;
   left:0;top:150%;width:300px;background:{P['surface']};
-  border:1px solid {P['border2']};border-radius:12px;padding:11px 13px;
+  border:1px solid {P['border2']};border-radius:var(--sa-radius-md);padding:11px 13px;
   box-shadow:0 12px 34px rgba(0,0,0,.18);transition:opacity .15s ease;
   text-align:left;}}
 .hv-wrap:hover .hv-card{{visibility:visible;opacity:1;}}

@@ -18,6 +18,7 @@ import pandas as pd
 import streamlit as st
 
 from modules.geo_utils import nearest_address
+from modules import design_tokens as T
 from modules.ui_components import P, html_table, sec
 
 _DIALOG = getattr(st, "dialog", None) or getattr(st, "experimental_dialog", None)
@@ -32,10 +33,12 @@ _DETAIL_WIDTHS = {"房源": "23%", "地址": "25%", "掛牌價": "11%",
 
 # 平台顯示名稱與代表色
 PLATFORM = {
-    "Airbnb": {"name": "Airbnb", "color": "#C4645A", "unit": "晚"},
-    "Booking": {"name": "Booking.com", "color": "#2563EB", "unit": "晚"},
-    "591": {"name": "591租屋網", "color": "#8B5CF6", "unit": "月"},
-    "ddroom": {"name": "DD租租網", "color": "#4B4B4B", "unit": "月"},
+    "Airbnb": {"name": "Airbnb", "color": T.PLATFORM_COLOR["Airbnb"], "unit": "晚"},
+    "Booking": {"name": "Booking.com", "color": T.PLATFORM_COLOR["Booking"],
+                "unit": "晚"},
+    "591": {"name": "591租屋網", "color": T.PLATFORM_COLOR["591"], "unit": "月"},
+    "ddroom": {"name": "DD租租網", "color": T.PLATFORM_COLOR["ddroom"],
+               "unit": "月"},
 }
 
 
@@ -99,9 +102,9 @@ def render_platform(platform: str, sub: pd.DataFrame, radius_m: float,
     s = stats(sub)
 
     st.markdown(
-        f'<div style="font-size:1.05rem;font-weight:700;color:{col};'
+        f'<div style="font-size:var(--sa-text-card-title);font-weight:700;color:{col};'
         f'margin-bottom:4px;">{name}</div>'
-        f'<div style="font-size:.8rem;color:{P["muted"]};line-height:1.9;">'
+        f'<div style="font-size:var(--sa-text-caption);color:{P["muted"]};line-height:1.9;">'
         f'📍 <b>比對範圍:</b>本房源半徑 {int(radius_m):,} 公尺內<br>'
         f'🗂 <b>掛牌筆數:</b>{s["n"]:,} 筆'
         f'{"｜最近 " + _fmt(s.get("dist_min")) + " 公尺" if s["n"] else ""}<br>'
@@ -197,16 +200,16 @@ def hover_card_html(platform: str, sub: pd.DataFrame, radius_m: float,
     name, col = label(platform), color(platform)
     s = stats(sub)
     if not s["n"]:
-        body = f'<div style="font-size:.75rem;color:{P["muted"]};">' \
+        body = f'<div style="font-size:var(--sa-text-caption);color:{P["muted"]};">' \
                f'此半徑內無 {name} 掛牌資料。</div>'
     else:
         near = sub.sort_values("dist_m").head(3)
         items = "".join(
             f'<div style="border-top:1px dashed {P["border"]};padding:4px 0;">'
-            f'<div style="font-size:.72rem;color:{P["ink"]};white-space:nowrap;'
+            f'<div style="font-size:var(--sa-text-label);color:{P["ink"]};white-space:nowrap;'
             f'overflow:hidden;text-overflow:ellipsis;">'
             f'{_html.escape(str(r["title"])[:26])}</div>'
-            f'<div style="font-size:.68rem;color:{P["muted"]};">'
+            f'<div style="font-size:var(--sa-text-label);color:{P["muted"]};">'
             f'${r["price_raw"]:,.0f}/{"月" if r["price_unit"] == "month" else "晚"}'
             f'・每人每晚 ${r["price_pp_day"]:,.0f}'
             f'・{r["dist_m"]:,.0f}m</div></div>'
@@ -219,22 +222,22 @@ def hover_card_html(platform: str, sub: pd.DataFrame, radius_m: float,
                         f'<b style="color:{P["high"] if diff >= 0 else P["low"]}">'
                         f'${abs(diff):,.0f}</b><br>')
         body = (
-            f'<div style="font-size:.73rem;color:{P["muted"]};line-height:1.8;">'
+            f'<div style="font-size:var(--sa-text-caption);color:{P["muted"]};line-height:1.8;">'
             f'🗂 半徑 {int(radius_m):,}m 內 <b>{s["n"]:,}</b> 筆掛牌<br>'
             f'💰 每人每晚中位 <b>${s["pp_median"]:,.0f}</b>'
             f'(IQR ${s["pp_q25"]:,.0f}–${s["pp_q75"]:,.0f})<br>'
             f'{cmp_line}'
             f'📍 最近 {s["dist_min"]:,.0f} 公尺</div>'
-            f'<div style="margin-top:6px;font-size:.68rem;color:{P["muted"]};">'
+            f'<div style="margin-top:6px;font-size:var(--sa-text-label);color:{P["muted"]};">'
             f'最近三筆</div>{items}')
     return f"""
 <div class="hv-wrap">
   <span class="hv-anchor">ⓘ 滑鼠停留檢視摘要</span>
   <div class="hv-card">
-    <div style="font-weight:700;font-size:.84rem;color:{col};
+    <div style="font-weight:700;font-size:var(--sa-text-body);color:{col};
          margin-bottom:5px;">{name}</div>
     {body}
-    <div style="font-size:.68rem;color:{P['muted']};margin-top:7px;
+    <div style="font-size:var(--sa-text-label);color:{P['muted']};margin-top:7px;
          border-top:1px dashed {P['border']};padding-top:5px;">
       完整掛牌明細、價格分佈與設施覆蓋率請按「查看詳情」</div>
   </div>

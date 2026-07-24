@@ -262,7 +262,7 @@ with TB1:
          else f"{SCOPE['vac_pred'].mean()*100:.0f}%"),
     ]
     # 統計卡只放數字;「需優先處理」的紅由 danger 膠囊承載,不再把數值染成
-    # 另一種紅(原本寫死 #D32F2F,與全站 danger 不同色)。
+    # 另一種紅(原本在這裡寫死一個材料設計的紅,與全站 danger 不同色)。
     for _col, (_label, _value) in zip((k1, k2, k3, k4, k5), _overview):
         with _col:
             if _label == "需優先處理":

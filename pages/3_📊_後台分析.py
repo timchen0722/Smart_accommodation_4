@@ -112,7 +112,7 @@ st.markdown("""
   border:none !important; border-bottom:2px solid transparent !important;
   border-radius:0 !important; margin-bottom:-2px !important;
   padding:9px 20px !important; color:var(--sa-muted) !important;
-  font-weight:700 !important; font-size:1.05rem !important;
+  font-weight:700 !important; font-size:var(--sa-text-card-title) !important;
   box-shadow:none !important; transition:color .2s ease,border-color .2s ease;}
 .st-key-pf_tabbar [data-testid="stButtonGroup"] [role="radiogroup"] button:hover{
   color:var(--sa-primary) !important;}
