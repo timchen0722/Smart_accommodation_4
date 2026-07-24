@@ -24,6 +24,7 @@ APP = str(ROOT / "pages" / "3_📊_後台分析.py")
 
 def _run():
     at = AppTest.from_file(APP, default_timeout=300)
+    at.session_state["pf_active_tab"] = "🚨 風險管理"   # 側欄/內容改為分頁條件渲染
     at.run()
     return at
 
@@ -99,7 +100,11 @@ def _checkbox(at, pred):
     return next((cb for cb in at.checkbox if pred(cb)), None)
 
 
-def test_勾選房源_底部浮動批次列現身():
+def test_勾選房源_頂部批次列啟用():
+    """批次派信列常駐於房源表格上方(原為底部浮動列,左半會被側邊欄遮住)。
+
+    勾選前:發送鈕存在但 disabled;勾選後啟用。全選鈕恆在。
+    """
     at = _run()
     if not _ready(at):
         pytest.skip("房東檢視未出現")
@@ -110,8 +115,12 @@ def test_勾選房源_底部浮動批次列現身():
     cb = _checkbox(at, lambda c: str(c.key).startswith("rm_sel_"))
     if cb is None:
         pytest.skip("該房東名下無房源列")
-    # 勾選前:無批次發送鈕
-    assert _btn(at, lambda b: b.key == "rm_batch_send") is None
+    # 勾選前:批次列常駐,發送鈕 disabled;全選鈕恆在
+    send = _btn(at, lambda b: b.key == "rm_batch_send")
+    assert send is not None and send.disabled is True
+    assert _btn(at, lambda b: b.key == "rm_select_all") is not None
+    # 勾選後:發送鈕啟用
     cb.check().run()
     assert not at.exception, at.exception
-    assert _btn(at, lambda b: b.key == "rm_batch_send") is not None
+    send2 = _btn(at, lambda b: b.key == "rm_batch_send")
+    assert send2 is not None and send2.disabled is False

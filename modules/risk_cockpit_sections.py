@@ -9,12 +9,13 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from modules import design_tokens as T
 from modules import platform_analytics as pa
-from modules.ui_components import P, html_table, note, sec
+from modules import ui_kit
+from modules.ui_components import ROOM_JP, note
 
-ROOM_ZH = {"Entire home/apt": "整棟出租", "Private room": "私人套房",
-           "Shared room": "共用套房", "Hotel room": "飯店客房"}
-TIER_ZH = {"red": "🔴 高風險", "yellow": "🟡 觀察", "green": "🟢 安全"}
+# 房型中譯與風險等級文案都改吃全站唯一來源(原本本檔各自複製一份)
+ROOM_ZH = ROOM_JP
 HOST_ALL = "不限"                 # 房源檢視「房東ID」selectbox 的不限哨兵
 LEADERBOARD_LIMIT = 100          # 房東檢視排行榜顯示上限
 LISTING_LIMIT_DEFAULT = 100      # 房源檢視預設顯示筆數
@@ -118,7 +119,8 @@ def render():
         return
     cm = commission()
 
-    sec("高風險房源與房東管理")
+    ui_kit.section_header("高風險房源與房東管理",
+                          desc="先在「房東管理」找到整批惡化的房東，再下鑽到「房源管理」逐間處理")
     view = st.session_state.setdefault("rm_view", "hosts")
     _tabs(view)
     st.divider()
@@ -156,29 +158,29 @@ def _lime_panel(row: pd.Series):
         reasons = _lime_reasons(lid, top=3)
     if reasons:
         for zh, dpp in reasons:
-            color = P["high"] if dpp > 0 else P["low"]
+            # 推高風險=danger、降低風險=success,與全站「紅=要處理」語意一致
+            role = "danger" if dpp > 0 else "success"
             sign = "推高" if dpp > 0 else "降低"
             st.markdown(
-                f"<div style='border-left:4px solid {color};"
-                f"background:{P['surface']};border-radius:0 8px 8px 0;"
+                f"<div style='border-left:4px solid var(--sa-{role});"
+                f"background:var(--sa-surface);"
+                f"border-radius:0 var(--sa-radius-sm) var(--sa-radius-sm) 0;"
                 f"padding:9px 14px;margin:6px 0;'><b>{zh}</b> — {sign}空屋風險 "
-                f"<span style='color:{color};font-weight:700;'>"
+                f"<span style='color:var(--sa-{role});font-weight:700;'>"
                 f"{dpp:+.2f} 個百分點</span></div>", unsafe_allow_html=True)
     else:
         st.caption("此房源無足夠特徵可解釋。")
-    st.button("✉️ 產生此房源輔導通知", key=f"rm_send1_{lid}",
-              on_click=_send_single, args=(lid,))
+    ui_kit.primary_button("✉️ 產生此房源輔導通知", key=f"rm_send1_{lid}",
+                          on_click=_send_single, args=(lid,))
 
 
 def _listing_rows(shown: pd.DataFrame):
     """房源列:每列 = [checkbox][可點ID][其他欄位];點ID展開 LIME 面板。"""
     expanded = st.session_state.get("rm_expanded_id")
     widths = [0.5, 1.3, 1.0, 0.9, 1.0, 0.9, 1.0, 1.0]
-    hdr = st.columns(widths)
-    for col, t in zip(hdr, ["選取", "房源ID", "行政區", "房型", "每晚房價",
-                            "風險分數", "警報層級", "房東ID"]):
-        col.markdown(f"<span style='color:{P['muted']};font-size:.7rem;"
-                     f"font-weight:700;'>{t}</span>", unsafe_allow_html=True)
+    ui_kit.table_header_row(
+        ["選取", "房源ID", "行政區", "房型", "每晚房價",
+         "風險分數", "警報層級", "房東ID"], widths)
     for _, r in shown.iterrows():
         lid = int(r["id"])
         c = st.columns(widths)
@@ -189,21 +191,22 @@ def _listing_rows(shown: pd.DataFrame):
         c[3].markdown(ROOM_ZH.get(r["room_type"], str(r["room_type"])))
         c[4].markdown(f"${pd.to_numeric(r['price'], errors='coerce'):,.0f}")
         c[5].markdown(f"{pd.to_numeric(r['prob'], errors='coerce'):.0%}")
-        c[6].markdown(TIER_ZH.get(str(r["tier"]), str(r["tier"])))
+        # 等級改用 RiskBadge:與統計卡、圖表、詳細頁同名同色
+        c[6].markdown(ui_kit.risk_badge(r["tier"]), unsafe_allow_html=True)
         c[7].markdown(f"#{int(r['host_id'])}")
         if expanded == lid:
             _lime_panel(r)
 
 
-_BATCH_BAR_CSS = f"""
+_BATCH_BAR_CSS = """
 <style>
-.st-key-rm-batch-bar {{
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 999;
-  background: {P['surface']}; border-top: 2px solid {P['primary']};
-  box-shadow: 0 -4px 18px rgba(0,0,0,.10); padding: 10px 26px;
-}}
-/* 浮動列出現時,墊高頁面底部避免遮住通知紀錄 */
-[data-testid="stAppViewBlockContainer"] {{ padding-bottom: 96px; }}
+/* 批次派信列:置於房源表格上方的一般區塊
+   (原為 position:fixed 底部浮動列,左側會被側邊欄遮住,故改置頂) */
+.st-key-rm-batch-bar {
+  background: var(--sa-surface); border: 1px solid var(--sa-border);
+  border-left: 4px solid var(--sa-primary); border-radius: var(--sa-radius-md);
+  padding: var(--sa-space-2) var(--sa-space-4); margin: 4px 0 10px;
+}
 </style>
 """
 
@@ -239,34 +242,60 @@ def _send_batch():
     st.toast(f"批次模擬寄送完成:{ok} 筆")
 
 
-def _batch_bar():
-    """底部浮動列:僅勾選數 ≥1 時渲染(房東檢視不呼叫本函式)。"""
+def _batch_bar(shown_ids):
+    """頂部批次派信列:全選 / 批次發送 / 清除選取(房東檢視不呼叫本函式)。
+
+    置於房源表格「上方」,常駐顯示;未勾選時發送與清除鈕為 disabled。
+    原本是底部 position:fixed 浮動列,左半部會被側邊欄蓋住,故改置頂。
+    """
     sel = _selected_ids()
-    if not sel:
-        return
     st.markdown(_BATCH_BAR_CSS, unsafe_allow_html=True)
     with st.container(key="rm-batch-bar"):
-        c = st.columns([2.4, 1, 1])
-        c[0].markdown(f"**已選 {len(sel)} 間**　將對這些房源產生平台輔導通知")
-        c[1].button(f"✉️ 批次發送 {len(sel)} 筆", key="rm_batch_send",
-                    type="primary", on_click=_send_batch)
-        c[2].button("清除選取", key="rm_batch_clear", on_click=_clear_selection)
+        c = st.columns([2.3, 0.9, 1.25, 1])
+        c[0].markdown(f"**已選 {len(sel)} 間**　將對這些房源產生平台輔導通知"
+                      if sel else "產生平台輔導通知　（先勾選左側方框）")
+        with c[1]:
+            ui_kit.secondary_button(f"☑ 全選 {len(shown_ids)} 間",
+                                    key="rm_select_all",
+                                    on_click=_select_ids, args=(shown_ids,))
+        with c[2]:
+            ui_kit.primary_button(f"✉️ 批次發送 {len(sel)} 筆",
+                                  key="rm_batch_send", disabled=not sel,
+                                  on_click=_send_batch)
+        with c[3]:
+            ui_kit.secondary_button("清除選取", key="rm_batch_clear",
+                                    disabled=not sel,
+                                    on_click=_clear_selection)
 
 
-def _render_listings(df: pd.DataFrame, cm: float):
-    """房源檢視:篩選 + 房源列(可勾選/可展開)+ 底部批次浮動列 + 通知紀錄。"""
-    valid_ids = df["host_id"].astype(int).unique().tolist()
-    f1, f2, f3, f4 = st.columns([1, 1, 1.4, 1.2])
-    tiers = f1.multiselect("警報層級", ["red", "yellow", "green"],
-                           default=["red"], format_func=lambda t: TIER_ZH[t],
-                           key="rm_tiers")
-    topn = f2.slider("顯示筆數", 20, 300, LISTING_LIMIT_DEFAULT, 20, key="rm_topn")
-    lo, hi = f3.slider("風險分數區間", 0.0, 1.0, (0.0, 1.0), 0.05, key="rm_prob")
+def render_sidebar_filters(df: pd.DataFrame):
+    """風險管理側欄篩選(警報層級/顯示筆數/風險分數區間/房東ID)。
+
+    由後台頁的側欄在「風險管理」分頁時呼叫;寫入 rm_tiers/rm_topn/
+    rm_prob/rm_host_filter,供 _render_listings 直接讀 session_state 使用。
+    """
+    st.multiselect("警報層級", list(T.TIER_ORDER), default=["red"],
+                   format_func=T.tier_label, key="rm_tiers")
+    st.slider("顯示筆數", 20, 300, LISTING_LIMIT_DEFAULT, 20, key="rm_topn")
+    st.slider("風險分數區間", 0.0, 1.0, (0.0, 1.0), 0.05, key="rm_prob")
+    valid_ids = df["host_id"].astype(int).unique().tolist() if len(df) else []
     opts = [HOST_ALL] + sorted(valid_ids)
     if st.session_state.get("rm_host_filter", HOST_ALL) not in opts:
         st.session_state["rm_host_filter"] = HOST_ALL     # 掉出母體→重置(合法,widget 前)
-    f4.selectbox("房東ID(可打字搜尋)", opts, key="rm_host_filter",
+    st.selectbox("房東ID(可打字搜尋)", opts, key="rm_host_filter",
                  format_func=lambda x: x if x == HOST_ALL else f"#{int(x)}")
+
+
+def _render_listings(df: pd.DataFrame, cm: float):
+    """房源檢視:讀側欄篩選 + 頂部批次派信列 + 房源列(可勾選/可展開)+ 通知紀錄。
+
+    篩選 widget 已移至後台頁側欄(render_sidebar_filters),本函式僅讀取
+    session_state 的 rm_tiers/rm_topn/rm_prob/rm_host_filter。
+    """
+    valid_ids = df["host_id"].astype(int).unique().tolist()
+    tiers = st.session_state.get("rm_tiers", ["red"])
+    topn = int(st.session_state.get("rm_topn", LISTING_LIMIT_DEFAULT))
+    lo, hi = st.session_state.get("rm_prob", (0.0, 1.0))
     host_filter = resolve_host_filter(
         st.session_state.get("rm_host_filter", HOST_ALL), valid_ids)
 
@@ -277,33 +306,54 @@ def _render_listings(df: pd.DataFrame, cm: float):
     _scope = f"🎯 已鎖定房東 #{host_filter};" if host_filter is not None else ""
     st.caption(f"{_scope}符合 {len(fdf):,} 間,顯示風險分數最高的 {len(shown):,} 間")
     if not shown_ids:
-        st.info("目前條件下沒有房源;請放寬篩選或改選房東。")
+        ui_kit.empty_state("目前條件下沒有房源",
+                           hint="請放寬側欄的警報層級／風險分數區間，或改選房東。")
         return
 
-    if host_filter is not None:
-        st.button(f"☑ 全選目前篩選結果({len(shown_ids)} 間)",
-                  key="rm_select_all", type="tertiary",
-                  on_click=_select_ids, args=(shown_ids,))
-
+    _batch_bar(shown_ids)
     note("點<b>房源ID</b>(藍色連結)展開 LIME 風險原因與單筆派信;"
-         "勾選左側方框後,底部會滑出批次派信列。")
+         "勾選左側方框後,用<b>上方批次派信列</b>發送。")
     _listing_rows(shown)
-    _batch_bar()
     st.divider()
     _notify_log_section()
 
 
 def _notify_log_section():
     """通知紀錄(單筆/批次共用 st.session_state['notify_log'])。"""
-    sec("通知紀錄")
+    ui_kit.section_header("通知紀錄")
     log = st.session_state.get("notify_log", [])
     if log:
-        html_table(pd.DataFrame(log)[["房源", "收件者", "機率", "門檻",
-                                      "觸發原因", "建議來源", "狀態", "時間"]],
-                   height=230)
+        ui_kit.data_table(pd.DataFrame(log)[["房源", "收件者", "機率", "門檻",
+                                             "觸發原因", "建議來源", "狀態",
+                                             "時間"]],
+                          height=230)
     else:
-        st.caption("尚無通知紀錄;點房源展開後按「✉️ 產生此房源輔導通知」,"
-                   "或勾選房源後批次發送。")
+        ui_kit.empty_state(
+            "尚無通知紀錄",
+            hint="點房源 ID 展開後按「✉️ 產生此房源輔導通知」，或勾選房源後批次發送。",
+            icon="✉️")
+
+
+# ── 房東排行榜:可點欄位標題排序(遞增/遞減切換)──────────────
+HOST_SORT_COLS = ["房源數", "高風險間數", "高風險占比",
+                  "平均風險分數", "預估年營收"]
+
+
+def _set_host_sort(col):
+    """點欄位標題:同欄再點切換升/降序,換欄則預設遞減(大→小)。"""
+    if st.session_state.get("rm_host_sort_col") == col:
+        st.session_state["rm_host_sort_asc"] = \
+            not st.session_state.get("rm_host_sort_asc", False)
+    else:
+        st.session_state["rm_host_sort_col"] = col
+        st.session_state["rm_host_sort_asc"] = False   # 首次點=遞減
+
+
+def _host_sort_arrow(col):
+    """回傳該欄目前排序箭頭:▼遞減 / ▲遞增 / ⇅未排序(可點)。"""
+    if st.session_state.get("rm_host_sort_col") == col:
+        return "▲" if st.session_state.get("rm_host_sort_asc") else "▼"
+    return "⇅"
 
 
 def _render_hosts(df: pd.DataFrame, cm: float):
@@ -312,29 +362,43 @@ def _render_hosts(df: pd.DataFrame, cm: float):
     q = st.text_input("🔍 房東ID 模糊查詢", key="rm_host_search",
                       placeholder="輸入房東ID片段,如 123;留空看全部")
     res = search_hosts(h, q)
+    # 使用者若點過欄位標題排序,套用其排序;否則維持風險預設排序
+    sort_col = st.session_state.get("rm_host_sort_col")
+    sort_asc = bool(st.session_state.get("rm_host_sort_asc", False))
+    if sort_col in res.columns:
+        res = res.sort_values(sort_col, ascending=sort_asc, kind="mergesort")
+
     _capped = "(僅顯示前 %d 位)" % LEADERBOARD_LIMIT \
         if len(h) > LEADERBOARD_LIMIT and len(res) >= LEADERBOARD_LIMIT else ""
-    st.caption(f"搜尋結果:{len(res):,} 位房東 · "
-               f"依「高風險間數 → 高風險占比」排序{_capped}")
-    note("點<b>房東ID</b>(藍色連結)即可下鑽該房東名下房源清單並派信。")
+    _order = f"依「{sort_col}」{'遞增' if sort_asc else '遞減'}排序" if sort_col \
+        else "依「高風險間數 → 高風險占比」排序"
+    st.caption(f"搜尋結果:{len(res):,} 位房東 · {_order}{_capped}")
+    note("點<b>房東ID</b>(藍色連結)即可下鑽該房東名下房源清單並派信;"
+         "點欄位標題的箭頭可依該欄數字遞增/遞減排序。")
     if not len(res):
-        st.info("查無符合的房東,請調整查詢條件。")
+        ui_kit.empty_state("查無符合的房東", hint="請清空或縮短房東 ID 查詢字串。",
+                           icon="🔍")
         return
 
-    widths = [0.6, 1.4, 0.9, 1.2, 1.0, 1.1, 1.3]
-    hdr = st.columns(widths)
-    for col, t in zip(hdr, ["排名", "房東ID", "房源數", "🔴高風險間數",
-                            "高風險占比", "平均風險分數", "預估年營收"]):
-        col.markdown(f"<span style='color:{P['muted']};font-size:.72rem;"
-                     f"font-weight:700;'>{t}</span>", unsafe_allow_html=True)
-    for rank, (_, r) in enumerate(res.iterrows(), 1):
+    # 末欄為留白 spacer,讓資料欄靠左集中(欄距不再過寬)。
+    # 表頭第一欄是純文字、其餘是可點排序按鈕,故不能整列交給 table_header_row,
+    # 只有第一欄沿用它的樣式 class。
+    widths = [1.4, 1.0, 1.5, 1.2, 1.5, 1.5, 2.0]
+    hdr = st.columns(widths, gap="small")
+    hdr[0].markdown('<span class="sa-table-head-cell">房東ID</span>',
+                    unsafe_allow_html=True)
+    for i, col in enumerate(HOST_SORT_COLS, start=1):
+        label = ("🔴" if col == "高風險間數" else "") + col
+        hdr[i].button(f"{label} {_host_sort_arrow(col)}",
+                      key=f"rm_sort_{col}", type="tertiary",
+                      on_click=_set_host_sort, args=(col,))
+    for _, r in res.iterrows():
         hid = int(r["host_id"])
-        c = st.columns(widths)
-        c[0].markdown(f"**{rank}**")
-        c[1].button(f"#{hid} ▸", key=f"rm_host_{hid}", type="tertiary",
+        c = st.columns(widths, gap="small")
+        c[0].button(f"#{hid} ▸", key=f"rm_host_{hid}", type="tertiary",
                     on_click=_go_listings, args=(hid,))
-        c[2].markdown(f"{int(r['房源數'])}")
-        c[3].markdown(f"{int(r['高風險間數'])}")
-        c[4].markdown(f"{float(r['高風險占比']):.0%}")
-        c[5].markdown(f"{float(r['平均風險分數']):.0%}")
-        c[6].markdown(_money(float(r['預估年營收'])))
+        c[1].markdown(f"{int(r['房源數'])}")
+        c[2].markdown(f"{int(r['高風險間數'])}")
+        c[3].markdown(f"{float(r['高風險占比']):.0%}")
+        c[4].markdown(f"{float(r['平均風險分數']):.0%}")
+        c[5].markdown(_money(float(r['預估年營收'])))
