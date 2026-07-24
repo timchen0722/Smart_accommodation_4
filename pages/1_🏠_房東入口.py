@@ -255,7 +255,7 @@ with TB1:
         ("近 30 天訂房率", "—" if SCOPE["booked_rate_d30"].isna().all()
          else f"{SCOPE['booked_rate_d30'].mean()*100:.0f}%"),
         ("30 天空檔", f"{int(_gapd.sum())} 天"),
-        ("需優先處理", f"{_alarm}／{_alarm_all} 間" if _filtered else f"{_alarm} 間"),
+        ("需優先處理", f'<span style="color: red;">{_alarm}／{_alarm_all} 間</span>' if _filtered else f'<span style="color: red;">{_alarm} 間</span>'),
         ("平均預測空屋率", "—" if SCOPE["vac_pred"].isna().all()
          else f"{SCOPE['vac_pred'].mean()*100:.0f}%"),
     ]

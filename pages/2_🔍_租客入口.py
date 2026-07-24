@@ -628,7 +628,7 @@ with col_list:
                 f'{SUBJECT_SHORT[k]} <b style="color:{P["tenant"]};">{disp}</b></span>')
         st.markdown(f"""
         <div style="background:{P['surface']};border:1px solid {P['border']};
-             border-radius:var(--sa-radius-pill);padding:14px 16px;margin-bottom:12px;
+             border-radius:var(--sa-radius-md);padding:14px 16px;margin-bottom:12px;
              box-shadow:0 1px 5px rgba(0,0,0,.05);">
           <div style="display:flex;gap:15px;align-items:flex-start;">
             <img src="{r['picture_url']}" referrerpolicy="no-referrer"

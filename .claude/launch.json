@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "smart-accommodation",
+      "runtimeExecutable": "streamlit",
+      "runtimeArgs": ["run", "index.py", "--server.port", "8524", "--server.headless", "true"],
+      "port": 8524,
+      "autoPort": false
+    }
+  ]
+}

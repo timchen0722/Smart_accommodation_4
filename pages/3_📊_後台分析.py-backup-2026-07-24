@@ -1,0 +1,138 @@
+# -*- coding: utf-8 -*-
+"""後台分析 — Airbnb 平台營運後台
+
+使用者角色:Airbnb 平台營運方(非房東)。四分頁對應三大工作情境 + 模型稽核:
+  🏙 市場總覽 / 🚨 風險管理 / 💰 營收與成長 / 🧪 數據分析
+設計依據:doc/07_平台後台改造設計.md
+"""
+import streamlit as st
+
+from modules import platform_analytics as pa
+from modules.platform_sections import (render_market_overview,
+                                       render_risk_management)
+from modules.ui_components import ROOM_JP, inject_css, sidebar_nav
+
+st.set_page_config(page_title="後台分析 — Airbnb 平台營運後台", page_icon="📊",
+                   layout="wide", initial_sidebar_state="expanded")
+inject_css()
+st.markdown(
+    "<style>.block-container,[data-testid='stMainBlockContainer']"
+    "{padding-top:3.5rem !important;}</style>", unsafe_allow_html=True)
+
+
+@st.cache_data(show_spinner=False)
+def _filter_options():
+    """側欄篩選選項(行政區、房型)。"""
+    from modules.feature_engineering import load_predictions
+    d = load_predictions()
+    if d is None:
+        return [], []
+    return (sorted(d["neighbourhood_cleansed"].dropna().unique().tolist()),
+            sorted(d["room_type"].dropna().unique().tolist()))
+
+
+DISTRICTS, ROOMS = _filter_options()
+
+# 四大分頁改用「有狀態切換器」而非 st.tabs:st.tabs 純前端切換,伺服器端
+# 無從得知目前分頁,側欄便無法隨分頁改變。以 segmented_control 綁 session_state,
+# 側欄與內容都能依 pf_active_tab 條件渲染。
+TAB_OVERVIEW = "🏙 市場總覽"
+TAB_RISK = "🚨 風險管理"
+TAB_REVENUE = "💰 營收與成長"
+TAB_DATA = "🧪 數據分析"
+TABS = [TAB_OVERVIEW, TAB_RISK, TAB_REVENUE, TAB_DATA]
+st.session_state.setdefault("pf_active_tab", TAB_OVERVIEW)
+
+
+def _sidebar_scope_filters():
+    """行政區 / 房型(市場總覽、風險管理、營收與成長共用的範圍篩選)。"""
+    st.multiselect("行政區", DISTRICTS, default=[], key="pf_districts",
+                   placeholder="不選＝全部行政區")
+    st.multiselect("房型", ROOMS, default=[], key="pf_rooms",
+                   format_func=lambda r: ROOM_JP.get(r, r),
+                   placeholder="不選＝全部房型")
+
+
+def _sidebar_commission():
+    """平台抽成率(僅市場總覽、營收與成長使用)。"""
+    st.markdown("#### 💰 平台抽成率")
+    st.slider("抽成率",
+              int(round(pa.COMMISSION_MIN * 100)),
+              int(round(pa.COMMISSION_MAX * 100)),
+              int(round(pa.COMMISSION_DEFAULT * 100)),
+              1, format="%d%%",
+              key="pf_commission",
+              help="用於把房東端預估年營收換算為平台收入;調整後所有分頁金額即時連動")
+
+
+with st.sidebar:
+    sidebar_nav()
+    st.markdown("#### 🏢 Airbnb 平台營運後台")
+    _active = st.session_state.get("pf_active_tab", TAB_OVERVIEW)
+
+    if _active == TAB_DATA:
+        # 數據分析為模型稽核頁,不吃任何篩選 → 側欄不放篩選器
+        st.caption("數據分析頁為模型稽核,無需篩選")
+    elif _active == TAB_RISK:
+        st.caption("以下篩選僅套用於「風險管理」分頁")
+        _sidebar_scope_filters()
+        st.divider()
+        st.markdown("#### 🚨 風險篩選")
+        from modules.risk_cockpit_sections import render_sidebar_filters
+        from modules.platform_sections import load_scope
+        render_sidebar_filters(load_scope())
+    else:  # 市場總覽 / 營收與成長
+        st.caption("以下篩選套用於目前分頁")
+        _sidebar_scope_filters()
+        st.divider()
+        _sidebar_commission()
+
+    st.divider()
+    st.caption("技術堆疊:HistGradientBoosting 主力 + XGBoost 對照(Isotonic 校準)· "
+               "標籤 vacancy_90 > 0.70 · 雙層警報(紅 0.60 / 黃 0.35)· "
+               "GroupKFold(host_id) 5 折誠實驗證 · 37 核心特徵(雙輸出:90天風險/365天營收)")
+
+st.markdown(
+    "<div style='font-size:1.6rem;font-weight:800;margin-bottom:14px;'>"
+    "📊 Airbnb 平台營運後台</div>", unsafe_allow_html=True)
+
+# 把 segmented_control 偽裝成原本 st.tabs 的「底線分頁」外觀;scope 到本頁
+# 的容器 class(st-key-pf_tabbar),不影響其他頁面的 segmented_control。
+st.markdown("""
+<style>
+.st-key-pf_tabbar [data-testid="stButtonGroup"] [role="radiogroup"]{
+  gap:0 !important; border-bottom:2px solid #E8E4DE; flex-wrap:nowrap;}
+.st-key-pf_tabbar [data-testid="stButtonGroup"] [role="radiogroup"] button,
+.st-key-pf_tabbar [data-testid="stButtonGroup"] [role="radiogroup"] button *{
+  background:transparent !important; color:inherit !important;}
+.st-key-pf_tabbar [data-testid="stButtonGroup"] [role="radiogroup"] button{
+  border:none !important; border-bottom:2px solid transparent !important;
+  border-radius:0 !important; margin-bottom:-2px !important;
+  padding:9px 20px !important; color:#9A9490 !important;
+  font-weight:700 !important; font-size:1.05rem !important;
+  box-shadow:none !important; transition:color .2s ease,border-color .2s ease;}
+.st-key-pf_tabbar [data-testid="stButtonGroup"] [role="radiogroup"] button:hover{
+  color:#4E7FB0 !important;}
+.st-key-pf_tabbar [data-testid="stButtonGroup"] [role="radiogroup"]
+  button[aria-checked="true"]{
+  color:#4E7FB0 !important; border-bottom:2px solid #4E7FB0 !important;}
+</style>
+""", unsafe_allow_html=True)
+
+with st.container(key="pf_tabbar"):
+    active = st.segmented_control("分頁切換", TABS, key="pf_active_tab",
+                                  label_visibility="collapsed")
+if active is None:                       # 尚未選擇時回退到市場總覽
+    active = TAB_OVERVIEW
+st.divider()
+
+if active == TAB_OVERVIEW:
+    render_market_overview()
+elif active == TAB_RISK:
+    render_risk_management()
+elif active == TAB_REVENUE:
+    from modules.portfolio_sections import render_portfolio_tab
+    render_portfolio_tab()
+elif active == TAB_DATA:
+    from modules.data_analysis_sections import render_data_analysis
+    render_data_analysis()
