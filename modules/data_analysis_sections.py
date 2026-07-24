@@ -7,6 +7,10 @@
 資料唯一來源：models/eval_vacancy_90.json
   （scripts/04_eval/build_data_analysis_json.py 產出，App 不重算）
 模型：HistGradientBoosting · 37 核心特徵 · 目標 Y_vacancy_90（雙輸出：90天風險 / 365天營收）
+
+外觀層一律走 design_tokens / ui_kit：標題用 ui_kit.section_header、
+指標用 ui_kit.stat_card_row、本檔僅存的三個專用卡片（模型卡 / 漏斗格 / 洞察卡）
+以 var(--sa-*) 取色與字級，不再出現裸色碼與自訂字級。
 """
 import json
 from pathlib import Path
@@ -14,7 +18,9 @@ from pathlib import Path
 import streamlit as st
 import plotly.graph_objects as go
 
-from modules.ui_components import P, sec, note, apply_theme
+from modules import design_tokens as T
+from modules import ui_kit
+from modules.ui_components import note, apply_theme
 
 EVAL_JSON = Path(__file__).resolve().parent.parent / "models" / "eval_vacancy_90.json"
 
@@ -40,7 +46,6 @@ _ADVICE = {
         "自助入住提升便利與可訂性，可建議導入智慧鎖。"),
 }
 _STRUCTURAL = ("結構性訊號", "屬房型/規模等結構條件，較難短期調整，供市場定位與供需分析參考。")
-_CARD_COLORS = None  # 於 render 時取用 P
 
 
 @st.cache_data(show_spinner=False)
@@ -54,112 +59,116 @@ def _pct(x):
     return f"{x * 100:.1f}%"
 
 
-def _model_card(tag, title, desc, color):
+def _model_card(tag, title, desc, role):
+    """模型 A / B 的說明卡。role 是語意色名(primary / secondary…)。"""
     return (
-        f"<div style='background:{P['surface']};border:1px solid {P['border']};"
-        f"border-left:4px solid {color};border-radius:12px;padding:14px 18px;"
-        f"height:104px;box-sizing:border-box;display:flex;flex-direction:column;"
-        f"justify-content:center;'>"
-        f"<div style='font-size:.66rem;font-weight:700;letter-spacing:.08em;"
-        f"color:{P['muted']};text-transform:uppercase;margin-bottom:4px;'>{tag}</div>"
-        f"<div style='font-size:1rem;font-weight:800;color:{color};"
-        f"margin-bottom:3px;'>{title}</div>"
-        f"<div style='font-size:.74rem;color:{P['ink2']};line-height:1.4;'>{desc}</div>"
-        f"</div>")
+        f"<div style='background:var(--sa-surface);"
+        f"border:1px solid var(--sa-border);border-left:var(--sa-radius-bar) "
+        f"solid var(--sa-{role});border-radius:var(--sa-radius-md);"
+        f"padding:var(--sa-card-pad);height:104px;box-sizing:border-box;"
+        f"display:flex;flex-direction:column;justify-content:center;'>"
+        f"<div style='font-size:var(--sa-text-label);"
+        f"font-weight:var(--sa-text-label-weight);"
+        f"letter-spacing:var(--sa-text-label-ls);color:var(--sa-muted);"
+        f"text-transform:uppercase;margin-bottom:var(--sa-space-1);'>{tag}</div>"
+        f"<div style='font-size:var(--sa-text-card-title);font-weight:800;"
+        f"color:var(--sa-{role});margin-bottom:2px;'>{title}</div>"
+        f"<div style='font-size:var(--sa-text-caption);color:var(--sa-ink2);"
+        f"line-height:1.4;'>{desc}</div></div>")
 
 
-def _kpi(col, label, value, sub):
-    col.markdown(
-        f"<div class='overview-metric'>"
-        f"<div class='overview-metric-label'>{label}</div>"
-        f"<div class='overview-metric-value'>{value}</div>"
-        f"<div style='font-size:.67rem;color:{P['muted']};margin-top:4px;"
-        f"line-height:1.3;'>{sub}</div></div>", unsafe_allow_html=True)
-
-
-def _funnel_box(big, small, sub, color, tint):
+def _funnel_box(big, small, sub, role):
+    """特徵漏斗的單格。role 決定頂線色與淡底,一律取自 TINT 同一組。"""
     return (
-        f"<div style='flex:1 1 0;min-width:0;background:{tint};"
-        f"border:1px solid {P['border']};border-top:3px solid {color};"
-        f"border-radius:10px;padding:12px 10px;text-align:center;'>"
-        f"<div style='font-size:1.5rem;font-weight:800;color:{color};"
-        f"line-height:1.1;'>{big}</div>"
-        f"<div style='font-size:.74rem;font-weight:700;color:{P['ink']};"
-        f"margin-top:3px;'>{small}</div>"
-        f"<div style='font-size:.64rem;color:{P['muted']};margin-top:2px;"
-        f"line-height:1.3;'>{sub}</div></div>")
+        f"<div style='flex:1 1 0;min-width:0;background:var(--sa-{role}-bg);"
+        f"border:1px solid var(--sa-border);border-top:3px solid "
+        f"var(--sa-{role}-fg);border-radius:var(--sa-radius-sm);"
+        f"padding:var(--sa-space-3) var(--sa-space-2);text-align:center;'>"
+        f"<div style='font-size:var(--sa-text-metric);font-weight:800;"
+        f"color:var(--sa-{role}-fg);line-height:1.1;'>{big}</div>"
+        f"<div style='font-size:var(--sa-text-caption);font-weight:700;"
+        f"color:var(--sa-ink);margin-top:3px;'>{small}</div>"
+        f"<div style='font-size:var(--sa-text-label);font-weight:400;"
+        f"color:var(--sa-muted);margin-top:2px;line-height:1.3;'>{sub}</div></div>")
 
 
 def _arrow():
-    return (f"<div style='align-self:center;color:{P['muted']};font-size:1.1rem;"
-            f"padding:0 2px;'>→</div>")
+    return ("<div style='align-self:center;color:var(--sa-muted);"
+            "font-size:var(--sa-text-card-title);padding:0 2px;'>→</div>")
 
 
-def _insight_card(title, body, color):
+def _insight_card(title, body, role):
     return (
-        f"<div style='background:{P['card']};border:1px solid {P['border']};"
-        f"border-left:3px solid {color};border-radius:10px;padding:11px 14px;"
-        f"height:100%;box-sizing:border-box;'>"
-        f"<div style='font-size:.82rem;font-weight:800;color:{P['ink']};"
-        f"margin-bottom:4px;'>{title}</div>"
-        f"<div style='font-size:.75rem;color:{P['ink2']};line-height:1.5;'>{body}</div>"
-        f"</div>")
+        f"<div style='background:var(--sa-card);border:1px solid var(--sa-border);"
+        f"border-left:3px solid var(--sa-{role});"
+        f"border-radius:var(--sa-radius-sm);padding:11px 14px;height:100%;"
+        f"box-sizing:border-box;'>"
+        f"<div style='font-size:var(--sa-text-card-title);font-weight:800;"
+        f"color:var(--sa-ink);margin-bottom:var(--sa-space-1);'>{title}</div>"
+        f"<div style='font-size:var(--sa-text-caption);color:var(--sa-ink2);"
+        f"line-height:1.5;'>{body}</div></div>")
+
+
+def _callout(body):
+    """結論式提示條(綠底)。與 note() 的差別:這是「已驗證的結論」而非補充說明。"""
+    return (
+        f"<div style='background:var(--sa-success-bg);"
+        f"border:1px solid var(--sa-success-border);"
+        f"border-radius:var(--sa-radius-sm);padding:10px 16px;"
+        f"margin:var(--sa-space-3) 0 2px;font-size:var(--sa-text-body);"
+        f"color:var(--sa-success-fg);line-height:1.5;'>{body}</div>")
 
 
 def render_data_analysis():
     """後台分析『數據分析』分頁主渲染（平鋪四段）。"""
     d = _load()
     if d is None:
-        st.warning("尚未產出 models/eval_vacancy_90.json，請先執行："
-                   "`python -X utf8 scripts/04_eval/build_data_analysis_json.py`")
+        ui_kit.empty_state(
+            "尚未產出模型稽核資料",
+            hint="缺少 models/eval_vacancy_90.json，請先執行下列腳本產出。",
+            cmd="python -X utf8 scripts/04_eval/build_data_analysis_json.py",
+            icon="⚙️")
         return
 
     ss, gk = d["single_split"], d["groupkfold"]
 
-    # ── 標題 ──
-    st.markdown(
-        f"<div style='font-size:1.18rem;font-weight:800;color:{P['ink']};"
-        f"margin:4px 0 1px;'>📈 數據分析（{d['n_features']} 特徵最終版）</div>"
-        f"<div style='color:{P['muted']};font-size:.84rem;margin-bottom:8px;'>"
-        f"平台風險評分模型做過哪些數據分析、為什麼可信 —— 一頁到底看完</div>",
-        unsafe_allow_html=True)
-
     # ════ ① 信任成績單 ════
-    sec("① 信任成績單：模型是什麼、誠實表現如何")
+    ui_kit.section_header(
+        "信任成績單：模型是什麼、誠實表現如何", number="①",
+        desc=f"平台風險評分採用的正式版本 —— {d['n_features']} 個核心特徵、"
+             f"HistGradientBoosting、目標為未來 90 天空屋率")
     mc = st.columns(2)
     mc[0].markdown(_model_card(
         "模型 A · 迴歸", d["model"]["reg"],
         "輸出連續空屋率分數（雙輸出：90天→風險、365天→營收）",
-        P["primary"]), unsafe_allow_html=True)
+        "primary"), unsafe_allow_html=True)
     mc[1].markdown(_model_card(
         "模型 B · 分類", d["model"]["clf"],
         f"判斷是否觸發高風險警報（{d['label_def_90']}）",
-        P["accent"]), unsafe_allow_html=True)
+        "secondary"), unsafe_allow_html=True)
 
     st.write("")
-    k = st.columns(4)
-    _kpi(k[0], "採用特徵數", str(d["n_features"]),
-         f"從原始欄位精簡而來 · 共 {d['n_samples']:,} 筆")
-    _kpi(k[1], "誠實 AUC（GroupKFold）", f"{gk['clf']['auc_90']:.3f}",
-         f"± {gk['clf']['auc_90_std']:.3f} · 面對全新房東")
-    _kpi(k[2], "誠實 R²（GroupKFold）", f"{gk['reg']['r2_90']:.3f}",
-         f"± {gk['reg']['r2_90_std']:.3f} · 90 天空屋率")
-    _kpi(k[3], "高風險基準率", _pct(d["base_rate_90"]),
-         "vacancy_90 > 0.70（空置>63天）")
+    ui_kit.stat_card_row([
+        ("採用特徵數", str(d["n_features"]), f"共 {d['n_samples']:,} 筆"),
+        ("誠實 AUC（GroupKFold）", f"{gk['clf']['auc_90']:.3f}",
+         f"± {gk['clf']['auc_90_std']:.3f} · 面對全新房東"),
+        ("誠實 R²（GroupKFold）", f"{gk['reg']['r2_90']:.3f}",
+         f"± {gk['reg']['r2_90_std']:.3f} · 90 天空屋率"),
+        (f"{T.tier_label('red')}基準率", _pct(d["base_rate_90"]),
+         "vacancy_90 > 0.70", "danger"),
+    ])
 
-    st.markdown(
-        f"<div style='background:#EAF5EE;border:1px solid #BFDCC9;border-radius:10px;"
-        f"padding:10px 16px;margin:14px 0 2px;font-size:.82rem;color:#2F6B49;"
-        f"line-height:1.5;'>✅ 這是平台正式採用的版本，所有風險評分都基於這 "
-        f"{d['n_features']} 個特徵，模型為 <b>HistGradientBoosting</b>、"
-        f"目標為 <b>未來 90 天空屋率</b>。知道極限在哪、也知道為什麼——"
-        f"這是本專案最大的嚴謹度優勢。</div>", unsafe_allow_html=True)
+    st.markdown(_callout(
+        f"✅ 這是平台正式採用的版本，所有風險評分都基於這 {d['n_features']} 個特徵。"
+        f"知道極限在哪、也知道為什麼——這是本專案最大的嚴謹度優勢。"),
+        unsafe_allow_html=True)
 
     st.divider()
 
     # ════ ② 誠實雙軌對照 ════
-    sec("② 誠實評估雙軌對照：主動抓出自己的漏洞")
-    st.caption("用兩種切分方法驗證同一個模型，主動找出分數虛高的原因")
+    ui_kit.section_header(
+        "誠實評估雙軌對照：主動抓出自己的漏洞", number="②",
+        desc="用兩種切分方法驗證同一個模型，主動找出分數虛高的原因")
     cb1, cb2 = st.columns([1.25, 1])
     with cb1:
         cats = ["迴歸 R²", "分類 AUC"]
@@ -167,7 +176,7 @@ def render_data_analysis():
         fig.add_trace(go.Bar(
             name="單次切分（樂觀）", x=cats,
             y=[ss["reg"]["r2_90"], ss["clf"]["auc_90"]],
-            marker_color=P["medium"],
+            marker_color=T.COLOR["warning"],
             text=[f"{ss['reg']['r2_90']:.3f}", f"{ss['clf']['auc_90']:.3f}"],
             textposition="outside"))
         fig.add_trace(go.Bar(
@@ -175,7 +184,7 @@ def render_data_analysis():
             y=[gk["reg"]["r2_90"], gk["clf"]["auc_90"]],
             error_y=dict(type="data",
                          array=[gk["reg"]["r2_90_std"], gk["clf"]["auc_90_std"]]),
-            marker_color=P["primary"],
+            marker_color=T.COLOR["primary"],
             text=[f"{gk['reg']['r2_90']:.3f}", f"{gk['clf']['auc_90']:.3f}"],
             textposition="outside"))
         apply_theme(fig, h=310).update_layout(
@@ -198,45 +207,52 @@ def render_data_analysis():
     st.divider()
 
     # ════ ③ 特徵怎麼篩選 ════
-    sec("③ 特徵怎麼篩選出來的：不是隨便湊的")
-    st.caption("從原始欄位一路測試、排除、驗證，最後留下 37 個核心特徵")
+    ui_kit.section_header(
+        "特徵怎麼篩選出來的：不是隨便湊的", number="③",
+        desc=f"從原始欄位一路測試、排除、驗證，最後留下 {d['n_features']} 個核心特徵")
     st.markdown(
         f"<div style='display:flex;gap:6px;margin:6px 0 8px;'>"
-        f"{_funnel_box('81', '原始欄位', 'Inside Airbnb 全欄', P['muted'], P['tag_bg'])}"
+        f"{_funnel_box('81', '原始欄位', 'Inside Airbnb 全欄', 'neutral')}"
         f"{_arrow()}"
-        f"{_funnel_box('−44', '排除', '洩漏／無效／未測試', P['ink2'], P['surface'])}"
+        f"{_funnel_box('−44', '排除', '洩漏／無效／未測試', 'neutral')}"
         f"{_arrow()}"
-        f"{_funnel_box('＋衍生', '特徵工程', '百分位／密度／經營天數', P['medium'], '#FBF6EA')}"
+        f"{_funnel_box('＋衍生', '特徵工程', '百分位／密度／經營天數', 'warning')}"
         f"{_arrow()}"
-        f"{_funnel_box('37', '最終採用', '正式進模型', P['low'], '#EAF5EE')}"
+        f"{_funnel_box(str(d['n_features']), '最終採用', '正式進模型', 'success')}"
         f"</div>", unsafe_allow_html=True)
     note("每一個留下來的特徵都經過測試驗證，不是原始資料有什麼就全部塞進去。"
          "特徵選擇實驗（前向選擇，以 365 天目標）顯示：約 <b>11~13 個特徵</b>即逼近"
          "誠實 R² 天花板（≈0.26），第 27 個特徵才達峰值 0.2627——增益早已是噪音。"
-         "採用 37 個是兼顧穩健性與冷啟動可維護性下的合理選擇，不是隨便湊的數字。")
-    # 37 特徵一覽（chips）
+         f"採用 {d['n_features']} 個是兼顧穩健性與冷啟動可維護性下的合理選擇，"
+         "不是隨便湊的數字。")
+    # 特徵一覽（chips）
     chips = "".join(
-        f"<span style='display:inline-block;background:{P['tag_bg']};"
-        f"border:1px solid {P['border']};border-radius:6px;padding:2px 9px;"
-        f"margin:3px 4px 0 0;font-size:.72rem;color:{P['ink2']};'>{f['zh']}</span>"
+        f"<span style='display:inline-block;background:var(--sa-neutral-bg);"
+        f"border:1px solid var(--sa-border);border-radius:var(--sa-radius-sm);"
+        f"padding:2px 9px;margin:3px 4px 0 0;font-size:var(--sa-text-caption);"
+        f"color:var(--sa-ink2);'>{f['zh']}</span>"
         for f in d["features"])
     st.markdown(
-        f"<div style='margin-top:4px;'><span style='font-size:.7rem;font-weight:700;"
-        f"color:{P['muted']};letter-spacing:.06em;'>37 特徵一覽</span><br>{chips}</div>",
+        f"<div style='margin-top:4px;'>"
+        f"<span style='font-size:var(--sa-text-label);"
+        f"font-weight:var(--sa-text-label-weight);"
+        f"letter-spacing:var(--sa-text-label-ls);color:var(--sa-muted);'>"
+        f"{d['n_features']} 特徵一覽</span><br>{chips}</div>",
         unsafe_allow_html=True)
 
     st.divider()
 
     # ════ ④ AI 在看什麼 ════
-    sec("④ AI 在看什麼、能給什麼建議：不是黑箱")
-    st.caption("每個判斷都能拆解成人看得懂的理由（Permutation Importance · 90 天模型）")
+    ui_kit.section_header(
+        "AI 在看什麼、能給什麼建議：不是黑箱", number="④",
+        desc="每個判斷都能拆解成人看得懂的理由（Permutation Importance · 90 天模型）")
     imp = d["importance_90"]
     ci1, ci2 = st.columns([1.15, 1])
     with ci1:
         ys = [x["zh"] for x in imp][::-1]
         xs = [x["value"] for x in imp][::-1]
         fig = go.Figure(go.Bar(
-            x=xs, y=ys, orientation="h", marker_color=P["primary"],
+            x=xs, y=ys, orientation="h", marker_color=T.COLOR["primary"],
             text=[f"{v:+.3f}" for v in xs], textposition="outside"))
         apply_theme(fig, h=360, legend=False).update_layout(
             margin=dict(l=8, r=40, t=10, b=24),
@@ -244,16 +260,13 @@ def render_data_analysis():
         st.plotly_chart(fig, use_container_width=True)
     with ci2:
         # 依「實際頭部特徵」動態產生可行動建議，確保與左側重要度圖一致
-        palette = [P["primary"], P["accent"], P["low"]]
-        cards, used = [], 0
-        for x in imp:
-            if used >= 3:
-                break
+        roles = ["primary", "secondary", "success"]
+        cards = []
+        for x in imp[:3]:
             title, body = _ADVICE.get(x["key"], (f"{x['zh']} · {_STRUCTURAL[0]}",
-                                                  _STRUCTURAL[1]))
+                                                 _STRUCTURAL[1]))
             cards.append(_insight_card(f"{title}（重要度 {x['value']:+.3f}）",
-                                       body, palette[used]))
-            used += 1
+                                       body, roles[len(cards)]))
         st.markdown("<div style='display:grid;gap:8px;'>" + "".join(cards)
                     + "</div>", unsafe_allow_html=True)
     note("以上為打亂單一特徵後模型 R² 的損失（permutation importance），"
