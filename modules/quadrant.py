@@ -32,21 +32,22 @@ from modules import design_tokens as T
 BOOKED_HIGH = 0.50
 BOOKED_LOW = 0.20
 
+
 QUADRANTS = {
     "alarm": {"label": "🚨 真警報", "color": "high", "priority": 1,
-              "desc": "體質差且檔期空 —— 模型與真實檔期雙雙示警,最高處理優先序",
+              "desc": "房子本身條件不好,未來也幾乎沒人訂——兩邊都亮紅燈,最該優先處理",
               "action": "立即檢視定價與 LIME 痛點,同步啟動空檔促銷"},
     "hidden": {"label": "👻 隱形危機", "color": "medium", "priority": 2,
-               "desc": "體質評估良好,但未來檔期幾乎沒有訂單 —— 模型看不到的短期問題",
+               "desc": "房子條件明明不錯,但接下來的日子幾乎沒訂單——問題不在房子,是最近出了狀況",
                "action": "優先查近期變動:競品降價、季節性淡季、日曆設定或照片失效"},
     "discount": {"label": "⚠️ 靠降價撐住", "color": "accent", "priority": 3,
-                 "desc": "檔期訂得滿,但體質評估偏弱 —— 可能以低價換取入住率",
+                 "desc": "房間幾乎都訂滿,但房子本身條件其實不算好——住滿不是因為受歡迎,而是價格壓得夠低。看起來生意好,實際可能不太賺錢",
                  "action": "檢查單價與 RevPAR(而非入住率),確認未賠本衝量"},
     "healthy": {"label": "✅ 健康", "color": "low", "priority": 4,
-                "desc": "體質與檔期皆良好",
+                "desc": "房子條件好,訂單也滿,一切正常",
                 "action": "維持現狀,持續觀察同商圈行情"},
     "unknown": {"label": f"❔ {T.STATUS_NO_DATA}", "color": "muted", "priority": 5,
-                "desc": "此房源不在 calendar 對照範圍(兩批資料爬取時間不同)",
+                "desc": "這批房源沒抓到訂房日曆資料(兩份資料爬取時間不同),無法判斷未來訂況",
                 "action": "僅依模型體質評估判讀"},
 }
 
