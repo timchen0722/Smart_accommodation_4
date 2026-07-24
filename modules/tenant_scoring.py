@@ -269,17 +269,16 @@ def priority_score(scores, top2):
 
 
 def total_and_band(scores):
-    """五科總分 S 與區間標籤。資料不足科目以 0 計入。"""
+    """五科總分 S 與區間標籤。資料不足科目以 0 計入。
+
+    門檻與文案(20/15/10,優先查看/值得考慮/普通/建議多比較)出自規劃書 v1.0,
+    唯一來源是 design_tokens.SCORE_BANDS —— 租客入口的地圖圖例與分數配色
+    同樣讀那一份,確保「卡片上寫的字」與「地圖上的顏色」永遠同一套判準。
+    """
+    from modules import design_tokens as T
+
     S = round(sum((v if v is not None else 0.0) for v in scores.values()), 1)
-    if S >= 20:
-        band = "優先查看"
-    elif S >= 15:
-        band = "值得考慮"
-    elif S >= 10:
-        band = "普通"
-    else:
-        band = "建議多比較"
-    return S, band
+    return S, T.score_band(S)[0]
 
 
 def sort_key(record, top2):

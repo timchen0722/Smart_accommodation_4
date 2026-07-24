@@ -154,21 +154,33 @@ def test_score_band_colors_are_valid_hex():
 
 
 def test_score_band_reuses_semantic_colors():
-    """兩端與中段必須沿用語意色,不可另外調一組綠/黃/紅。"""
+    """四級一律沿用語意色,不可另外調一組綠/黃/紅。"""
     by_name = {name: color for _, name, color in dt.SCORE_BANDS}
-    assert by_name["優秀"] == dt.COLOR["success"]
+    assert by_name["優先查看"] == dt.TINT["success"]["fg"]
+    assert by_name["值得考慮"] == dt.COLOR["success"]
     assert by_name["普通"] == dt.COLOR["warning"]
-    assert by_name["最需比較"] == dt.COLOR["danger"]
-    assert by_name["非常優秀"] == dt.TINT["success"]["fg"]
+    assert by_name["建議多比較"] == dt.COLOR["danger"]
 
 
 @pytest.mark.parametrize("total,expected", [
-    (25, "非常優秀"), (22, "非常優秀"), (21.9, "優秀"), (18, "優秀"),
-    (17, "普通"), (14, "普通"), (13, "較差"), (10, "較差"),
-    (9, "最需比較"), (0, "最需比較"),
+    (25, "優先查看"), (20, "優先查看"), (19.9, "值得考慮"), (15, "值得考慮"),
+    (14.9, "普通"), (10, "普通"), (9.9, "建議多比較"), (0, "建議多比較"),
 ])
 def test_score_band_boundaries(total, expected):
     assert dt.score_band(total)[0] == expected
+
+
+def test_score_band_matches_tenant_scoring_spec():
+    """規則書 v1.0 的四級判準只准有一份 —— 計分引擎與色帶必須逐點一致。
+
+    這是 2026-07-24「以規則書四級為準」裁示的執行點:任何一邊被改動,
+    這個測試就會紅燈。
+    """
+    from modules import tenant_scoring as ts
+    for total in (25, 20, 19.9, 15, 14.9, 10, 9.9, 0):
+        engine = ts.total_and_band({"only": total})[1]
+        token = dt.score_band(total)[0]
+        assert engine == token, f"total={total}:引擎={engine} vs 色帶={token}"
 
 
 def test_score_band_handles_unreadable_input():
@@ -187,5 +199,5 @@ def test_only_design_tokens_defines_score_band_colors():
         if f.name == "design_tokens.py":
             continue
         src = f.read_text(encoding="utf-8")
-        assert "非常優秀" not in src or "SCORE_BANDS" in src, \
+        assert "優先查看" not in src or "SCORE_BANDS" in src, \
             f"{f.name} 疑似自帶一份分數帶文案,應改吃 design_tokens.SCORE_BANDS"
