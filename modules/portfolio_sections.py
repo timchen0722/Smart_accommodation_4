@@ -10,17 +10,18 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from modules import calendar_analytics as ca
 from modules.data_loader import load_listings
-from modules.ui_components import P, apply_theme, html_table, mb, note, sec
+from modules.ui_components import (P, ROOM_JP, RTC, apply_theme, html_table,
+                                   mb, note, overview_metric_card, sec)
 
 MODELS = Path(__file__).resolve().parent.parent / "models"
-ROOM_ZH = {"Entire home/apt": "整棟出租", "Private room": "私人套房",
-           "Shared room": "共用套房", "Hotel room": "飯店客房"}
+ROOM_ZH = ROOM_JP          # 房型中譯改吃全站唯一來源(原本本檔複製一份)
+# 圖表房型固定順序(照附圖:整棟→飯店→私人套房→共用)
+ROOM_ORDER = ["整棟出租", "飯店客房", "私人套房", "共用套房"]
 
 
 @st.cache_data(show_spinner="計算房型獲利 …")
@@ -33,95 +34,173 @@ def _portfolio() -> pd.DataFrame:
 # ════════════════════════════════════════════════════════════════
 # 分頁:房型獲利分析
 # ════════════════════════════════════════════════════════════════
+def _scoped_portfolio() -> pd.DataFrame:
+    """calendar 房型獲利母體套用側欄『行政區 / 房型』篩選。"""
+    d = _portfolio()
+    dist = st.session_state.get("pf_districts")
+    rooms = st.session_state.get("pf_rooms")
+    if dist:
+        d = d[d["neighbourhood_cleansed"].isin(dist)]
+    if rooms:
+        d = d[d["room_type"].isin(rooms)]
+    return d
+
+
+def _fmt_k(v) -> str:
+    """金額縮寫成 $520k;NaN 回空字串。"""
+    if pd.isna(v):
+        return ""
+    return f"${v / 1000:,.0f}k"
+
+
+def _district_order(d: pd.DataFrame, col: str = "neighbourhood_cleansed"):
+    """依房源數由多到少排序行政區(熱門在上)。"""
+    return (d.groupby(col).size().sort_values(ascending=False).index.tolist())
+
+
+# 區塊標題語意色(僅本分頁用;高對比、不改全站 .sec)
+#   破題=藍 / 現況=琥珀 / 行動=綠,對應三段敘事節奏
+SEC3_TONE = {
+    "break": (P["primary"], "#EEF4FB"),   # 破題
+    "now":   (P["medium"], "#F7F1E4"),    # 現況
+    "act":   (P["low"], "#EAF3EE"),       # 行動
+}
+
+
+def _sec3(num: str, title: str, tag: str, tone: str = "break"):
+    """精簡版專用的高對比區塊標題:序號徽章 + 粗體深色標題 + 語意 pill。
+
+    以 inline style 產生單行 HTML(無空白行),不觸碰全站 `.sec` 樣式。
+    """
+    c, bg = SEC3_TONE.get(tone, SEC3_TONE["break"])
+    st.markdown(
+        "<div style='display:flex;align-items:center;flex-wrap:wrap;gap:9px;"
+        "margin:26px 0 12px;'>"
+        "<span style='display:inline-flex;align-items:center;justify-content:"
+        f"center;width:26px;height:26px;border-radius:7px;background:{c};"
+        f"color:#fff;font-weight:800;font-size:.9rem;flex:none;'>{num}</span>"
+        f"<span style='font-size:1.08rem;font-weight:800;color:{P['ink']};"
+        f"letter-spacing:.01em;'>{title}</span>"
+        f"<span style='background:{bg};color:{c};font-size:.72rem;"
+        "font-weight:700;padding:3px 11px;border-radius:999px;"
+        f"border:1px solid {c}40;'>{tag}</span></div>",
+        unsafe_allow_html=True)
+
+
+def _tab_title(icon: str, title: str, subtitle: str):
+    """分頁主標題:粗體深色 + 說明,取代 muted 小灰 sec()。"""
+    st.markdown(
+        f"<div style='margin:2px 0 2px;font-size:1.34rem;font-weight:800;"
+        f"color:{P['ink']};letter-spacing:.01em;'>{icon} {title}</div>"
+        f"<div style='color:{P['ink2']};font-size:.86rem;margin-bottom:10px;'>"
+        f"{subtitle}</div>",
+        unsafe_allow_html=True)
+
+
 def render_portfolio_tab():
     if not ca.available():
         st.warning("尚未產生檔期資料,請先執行:")
         st.code("python -X utf8 scripts/build_calendar_features.py")
         return
-    d = _portfolio()
+    d = _scoped_portfolio()
+    if len(d) == 0:
+        st.warning("目前側欄篩選條件下沒有可分析房源,請放寬行政區 / 房型篩選。")
+        return
 
-    sec("房型獲利分析(以 calendar 真實已訂天數估算)")
-    mb("年營收估算 = 每晚價格 × 未來 365 天真實已訂天數 · "
-       "已排除全年封鎖與全年全空之異常房源")
+    from modules.platform_sections import commission
+    cm = commission()
 
-    k = st.columns(4)
-    k[0].metric("可分析房源", f"{len(d):,} 間")
-    k[1].metric("平均已訂率", f"{d['booked_rate'].mean():.0%}")
-    k[2].metric("年營收估算中位", f"${d['年營收估算'].median():,.0f}")
+    _tab_title("💰", "營收與成長(精簡版・3 圖)",
+               "房型排行 → 熱力矩陣 → 成長機會,三種視覺語法講完整個故事;"
+               "年營收估算 = 每晚價格 × 未來 365 天真實已訂天數")
+
+    _rev_med = float(d["年營收估算"].median())
+    k = st.columns(5)
     _best = d.groupby("房型")["年營收估算"].median().idxmax()
-    k[3].metric("最高獲利房型", _best, delta_color="off")
+    with k[0]:
+        overview_metric_card("可分析房源", f"{len(d):,} 間")
+    with k[1]:
+        overview_metric_card("平均已訂率", f"{d['booked_rate'].mean():.0%}")
+    with k[2]:
+        overview_metric_card("房東年營收中位", f"${_rev_med:,.0f}")
+    with k[3]:
+        overview_metric_card("平台預估年收入(中位)",
+                             f"${_rev_med * cm:,.0f}",
+                             f"抽成率 {cm:.0%}", accent_note=True)
+    with k[4]:
+        overview_metric_card("最高獲利房型", _best)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        g = (d.groupby("房型")
-             .agg(中位年營收=("年營收估算", "median"),
-                  平均已訂率=("booked_rate", "mean"),
-                  中位價格=("price", "median"),
-                  房源數=("id", "size")).reset_index()
-             .sort_values("中位年營收", ascending=False))
-        fig = px.bar(g, x="房型", y="中位年營收", color="平均已訂率",
-                     color_continuous_scale=["#C4645A", "#C49A4A", "#5B9E73"],
-                     text=g["中位年營收"].map("${:,.0f}".format))
-        apply_theme(fig, h=330).update_layout(
-            title="各房型中位年營收估算", yaxis_title="年營收估算 (NT$)")
-        st.plotly_chart(fig, use_container_width=True)
-        html_table(g.assign(
-            中位年營收=g["中位年營收"].map("${:,.0f}".format),
-            平均已訂率=g["平均已訂率"].map("{:.0%}".format),
-            中位價格=g["中位價格"].map("${:,.0f}".format)), height=190)
-    with c2:
-        piv = (d.pivot_table(index="neighbourhood_cleansed", columns="房型",
-                             values="年營收估算", aggfunc="median")
-               .round(0))
-        fig = px.imshow(piv, text_auto=".2s", aspect="auto",
-                        color_continuous_scale=["#F5F1EA", "#C49A4A", "#5B9E73"],
-                        labels={"color": "中位年營收"})
-        apply_theme(fig, h=480).update_layout(
-            title="行政區 × 房型 中位年營收估算矩陣",
-            xaxis_title="", yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
+    # ── 圖1:房型獲利排行(破題) ──────────────────────────────
+    _sec3("①", "房型獲利排行", "破題・哪個房型最賺", "break")
+    g1 = (d.groupby("房型")["年營收估算"].median()
+          .reindex(ROOM_ORDER).dropna().sort_values(ascending=True))
+    fig1 = go.Figure(go.Bar(
+        x=g1.values, y=g1.index, orientation="h",
+        marker_color=[RTC.get(r, P["primary"]) for r in g1.index],
+        text=[_fmt_k(v) for v in g1.values], textposition="outside",
+        cliponaxis=False,
+        hovertemplate="%{y}<br>中位年營收 %{x:$,.0f}<extra></extra>"))
+    apply_theme(fig1, h=300, legend=False).update_layout(
+        xaxis_title="中位年營收 (NT$)", yaxis_title="",
+        margin=dict(l=20, r=70, t=20, b=30))
+    st.plotly_chart(fig1, use_container_width=True)
 
-    st.divider()
-    sec("投資決策視角:哪一區、哪種房型最值得投入")
-    dd = (d.groupby(["neighbourhood_cleansed", "房型"])
-          .agg(中位年營收=("年營收估算", "median"),
-               平均已訂率=("booked_rate", "mean"),
-               中位價格=("price", "median"),
-               房源數=("id", "size")).reset_index())
-    dd = dd[dd["房源數"] >= 15]
-    fig = px.scatter(dd, x="中位價格", y="平均已訂率", size="房源數",
-                     color="中位年營收", hover_name="neighbourhood_cleansed",
-                     hover_data={"房型": True, "房源數": True},
-                     color_continuous_scale=["#C4645A", "#C49A4A", "#5B9E73"],
-                     size_max=38)
-    fig.add_hline(y=dd["平均已訂率"].median(), line_dash="dot",
-                  line_color=P["muted"], annotation_text="已訂率中位")
-    fig.add_vline(x=dd["中位價格"].median(), line_dash="dot",
-                  line_color=P["muted"], annotation_text="價格中位")
-    apply_theme(fig, h=430).update_layout(
-        title="價格 × 已訂率 定位圖(泡泡大小=房源數,顏色=年營收)",
-        xaxis_title="中位每晚價格 (NT$)", yaxis_title="平均已訂率")
-    st.plotly_chart(fig, use_container_width=True)
-    note("<b>右上象限</b>(高價且高訂房率)= 最佳投資標的;<b>左上</b>(低價高訂房)= 薄利多銷型;"
-         "<b>右下</b>(高價低訂房)= 定價過高或需求不足。"
-         "泡泡越大代表該組合的房源越多、市場越成熟。")
+    # ── 圖2:行政區 × 房型 獲利熱力矩陣(現況) ─────────────────
+    _sec3("②", "行政區 × 房型 獲利熱力矩陣", "現況・錢在哪裡", "now")
+    scope = st.radio("顯示口徑", ["房東端", "平台端"], horizontal=True,
+                     key="rev_heat_scope",
+                     help="房東端 = 中位年營收;平台端 = 中位年營收 × 抽成率")
+    factor = cm if scope == "平台端" else 1.0
+    piv = (d.pivot_table(index="neighbourhood_cleansed", columns="房型",
+                         values="年營收估算", aggfunc="median")
+           .reindex(index=_district_order(d),
+                    columns=[c for c in ROOM_ORDER if c in d["房型"].unique()]))
+    z = (piv * factor).values
+    txt = [[_fmt_k(v) for v in row] for row in z]
+    fig2 = go.Figure(go.Heatmap(
+        z=z, x=list(piv.columns), y=list(piv.index),
+        text=txt, texttemplate="%{text}",
+        textfont=dict(size=13, color="#2A2A2A"),
+        colorscale=["#F5F1EA", "#C49A4A", "#5B9E73"],
+        hoverongaps=False, xgap=3, ygap=3,
+        hovertemplate=("%{y} · %{x}<br>"
+                       + ("平台" if scope == "平台端" else "房東")
+                       + "中位年營收 %{z:$,.0f}<extra></extra>"),
+        colorbar=dict(title=scope + "中位年營收")))
+    apply_theme(fig2, h=90 + 48 * len(piv.index), legend=False).update_layout(
+        xaxis_title="", yaxis=dict(autorange="reversed"),
+        margin=dict(l=20, r=20, t=10, b=20))
+    st.plotly_chart(fig2, use_container_width=True)
 
-    top = dd.nlargest(10, "中位年營收")
-    html_table(top.assign(
-        中位年營收=top["中位年營收"].map("${:,.0f}".format),
-        平均已訂率=top["平均已訂率"].map("{:.0%}".format),
-        中位價格=top["中位價格"].map("${:,.0f}".format)).rename(
-        columns={"neighbourhood_cleansed": "行政區"}), height=290)
-    note("⚠️ 此為<b>橫斷面估算</b>:不同房源的實際成本(租金、清潔、平台抽成)未納入,"
-         "且『不可訂』含房東封鎖成分;請作為相對比較而非絕對獲利保證。")
-
-    # ── 長短租策略分析 ──
-    st.divider()
-    render_tenure_strategy(d)
-
-    # ── 成長機會(平台方視角供需缺口)──
-    st.divider()
+    # ── 圖3:成長機會供需矩陣(行動) ──────────────────────────
     render_growth_opportunity()
+
+    # ── 底部:長短租一句話結論(不另做圖) ──────────────────────
+    _tenure_oneliner(d)
+    note("所有金額皆為<b>模型 / calendar 估算</b>,非實際金流;"
+         "『不可訂』含房東封鎖成分,請作為相對比較而非絕對獲利保證。")
+
+
+def _tenure_oneliner(d: pd.DataFrame):
+    """用真實 calendar 資料算短租 vs 長租已訂率,輸出一行結論(不做圖)。"""
+    try:
+        m = ca.healthy_metrics()[["listing_id", "min_nights_median",
+                                  "booked_rate"]]
+        j = d.merge(m, on="listing_id", how="inner", suffixes=("", "_m"))
+        _st = j[j["min_nights_median"] <= 3]["booked_rate"]
+        _lt = j[j["min_nights_median"] >= 28]["booked_rate"]
+        if len(_st) and len(_lt):
+            note(f"📌 <b>長短租策略一句話結論</b>:短租型(≤3 晚)平均已訂率 "
+                 f"<b>{_st.mean():.0%}</b>、周轉快;長租型(≥28 晚)平均已訂率 "
+                 f"<b>{_lt.mean():.0%}</b>,單價穩但周轉慢,且需留意規避短租"
+                 f"法規的訊號(詳見『數據分析』旁的合規提示)。不另做圖,"
+                 f"避免雙軸圖表誤導。")
+            return
+    except Exception:
+        pass
+    note("📌 <b>長短租策略一句話結論</b>:短租型(≤3 晚)周轉快、已訂率較高;"
+         "長租型(≥28 晚)單價穩但周轉慢,且需留意規避短租法規的訊號。"
+         "不另做圖,避免雙軸圖表誤導。")
 
 
 def render_tenure_strategy(d: pd.DataFrame):
@@ -308,63 +387,100 @@ def render_forward_validation_tab():
 # ════════════════════════════════════════════════════════════════
 # 區塊:成長機會(行政區 x 房型 供需缺口)
 # ════════════════════════════════════════════════════════════════
+# 供需狀態三級:現有兩級標籤 → 附圖用語 +(顏色碼,語意色)
+STATUS_MAP = {
+    "🟢 招募缺口": ("缺口市場（建議招募）", 2, "#7FB98E"),
+    "⚪ 一般":     ("觀察中", 1, "#E3D5B0"),
+    "🔴 供給飽和": ("已飽和", 0, "#D8D3CB"),
+}
+# 3 段離散色階(灰→米黃→綠),對應狀態碼 0 / 1 / 2
+STATUS_SCALE = [[0.0, "#D8D3CB"], [0.333, "#D8D3CB"],
+                [0.334, "#E3D5B0"], [0.666, "#E3D5B0"],
+                [0.667, "#7FB98E"], [1.0, "#7FB98E"]]
+
+
 def render_growth_opportunity():
-    """平台方視角:哪些 行政區 x 房型 組合該招募房源、哪些已飽和。"""
+    """圖3:行政區 × 房型 成長機會供需矩陣(缺口市場 / 觀察中 / 已飽和)。"""
     from modules import platform_analytics as pa
     from modules.platform_sections import ROOM_ZH as _RZ
     from modules.platform_sections import _money, commission, guard_scope
+
+    _sec3("③", "成長機會供需矩陣", "行動・接下來去哪賺", "act")
+    st.caption("需求強(空屋率低於中位)且供給薄(房源數低於中位)= 建議招募的缺口市場;"
+               "反之為已飽和、不宜再增供給;點格子看 hover 明細")
 
     df = guard_scope()
     if df is None:
         return
     cm = commission()
 
-    sec("成長機會:供需缺口矩陣")
-    mb("需求強(平均空屋率低於中位)且供給薄(房源數低於中位)= 建議招募房源的缺口市場;"
-       "反之為已飽和、不宜再增加供給的組合")
-
     g = pa.supply_demand_matrix(df, min_listings=15)
     if len(g) == 0:
         st.info("篩選範圍內沒有房源數 ≥ 15 的『行政區 × 房型』組合,無法評估供需。")
         return
     g["房型中文"] = g["房型"].map(_RZ).fillna(g["房型"])
+    g["狀態"] = g["機會標籤"].map(lambda s: STATUS_MAP.get(s, ("觀察中", 1, ""))[0])
+    g["_code"] = g["機會標籤"].map(lambda s: STATUS_MAP.get(s, ("", 1, ""))[1])
 
     gap = g[g["機會標籤"] == "🟢 招募缺口"]
     sat = g[g["機會標籤"] == "🔴 供給飽和"]
     k = st.columns(3)
     k[0].metric("可評估組合", f"{len(g):,} 組")
-    k[1].metric("🟢 招募缺口組合", f"{len(gap):,} 組")
-    k[2].metric("🔴 供給飽和組合", f"{len(sat):,} 組")
+    k[1].metric("🟢 缺口市場組合", f"{len(gap):,} 組")
+    k[2].metric("⬜ 已飽和組合", f"{len(sat):,} 組")
 
-    c1, c2 = st.columns([1.35, 1])
-    with c1:
-        fig = px.scatter(g, x="房源數", y="平均空屋率", color="機會標籤",
-                         size="中位價格", hover_name="行政區",
-                         hover_data={"房型中文": True, "中位價格": ":,.0f"},
-                         color_discrete_map={"🟢 招募缺口": P["low"],
-                                             "🔴 供給飽和": P["high"],
-                                             "⚪ 一般": P["muted"]},
-                         size_max=34)
-        fig.add_hline(y=g["平均空屋率"].median(), line_dash="dot",
-                      line_color=P["muted"], annotation_text="空屋率中位")
-        fig.add_vline(x=g["房源數"].median(), line_dash="dot",
-                      line_color=P["muted"], annotation_text="房源數中位")
-        apply_theme(fig, h=420).update_layout(
-            title="供給量 × 需求強度(左下＝需求強但供給薄,最值得招募)",
-            xaxis_title="該組合房源數(供給)",
-            yaxis_title="平均預估空屋率(越低代表需求越強)")
-        st.plotly_chart(fig, use_container_width=True)
-        note("<b>左下象限</b>= 空屋率低(訂得滿)但房源少 → 平台應優先招商;"
-             "<b>右上象限</b>= 房源多且空屋率高 → 供給已過剩,再增加房源會壓低整體表現。")
-    with c2:
-        top = gap.nsmallest(12, "平均空屋率") if len(gap) else g.nsmallest(12, "平均空屋率")
-        html_table(top.assign(
-            平均空屋率=top["平均空屋率"].map("{:.1%}".format),
-            中位價格=top["中位價格"].map("${:,.0f}".format))[
-            ["行政區", "房型中文", "房源數", "平均空屋率", "中位價格", "機會標籤"]
-        ].rename(columns={"房型中文": "房型"}), height=420)
+    rows = _district_order(g, "行政區")
+    cols = [c for c in ROOM_ORDER if c in g["房型中文"].unique()]
+
+    def _piv(val):
+        return (g.pivot_table(index="行政區", columns="房型中文", values=val,
+                              aggfunc="first")
+                .reindex(index=rows, columns=cols))
+
+    z = _piv("_code").values
+    p_vac, p_n, p_pr = _piv("平均空屋率"), _piv("房源數"), _piv("中位價格")
+    p_lab = _piv("狀態")
+
+    # customdata 全部預格式化為字串,避免 str/數值混型被 numpy 轉型後
+    # 導致 hovertemplate 的數值格式碼失效
+    txt, cd = [], []
+    for i in range(len(rows)):
+        trow, crow = [], []
+        for j in range(len(cols)):
+            v, n = p_vac.values[i][j], p_n.values[i][j]
+            if pd.isna(v):
+                trow.append("")
+                crow.append(["—", "—", "—", "—"])
+            else:
+                trow.append(f"空屋 {v:.0%}<br>{int(n)} 間")
+                crow.append([str(p_lab.values[i][j]), f"{v:.0%}",
+                             f"{int(n):,}", f"${p_pr.values[i][j]:,.0f}"])
+        txt.append(trow)
+        cd.append(crow)
+
+    fig = go.Figure(go.Heatmap(
+        z=z, x=cols, y=rows, text=txt, texttemplate="%{text}",
+        textfont=dict(size=12, color="#3A3A3A"),
+        customdata=cd, zmin=0, zmax=2, colorscale=STATUS_SCALE,
+        showscale=False, hoverongaps=False, xgap=3, ygap=3,
+        hovertemplate=("%{y} · %{x}<br>狀態:%{customdata[0]}<br>"
+                       "平均空屋率 %{customdata[1]}<br>"
+                       "房源數 %{customdata[2]} 間<br>"
+                       "中位價 %{customdata[3]}<extra></extra>")))
+    apply_theme(fig, h=90 + 52 * len(rows), legend=False).update_layout(
+        xaxis_title="", yaxis=dict(autorange="reversed"),
+        margin=dict(l=20, r=20, t=10, b=20))
+    st.plotly_chart(fig, use_container_width=True)
+
+    _sq = ("<span style='display:inline-block;width:12px;height:12px;"
+           "border-radius:2px;margin:0 4px 0 12px;background:{c};'></span>")
+    st.markdown(
+        _sq.format(c="#7FB98E") + "缺口市場(建議招募)"
+        + _sq.format(c="#E3D5B0") + "觀察中"
+        + _sq.format(c="#D8D3CB") + "已飽和",
+        unsafe_allow_html=True)
 
     _rev = (pa.add_revenue_columns(df, cm)["platform_revenue"].sum())
     note(f"以目前抽成率 {cm:.0%} 估算,篩選範圍內平台年收入約 <b>{_money(_rev)}</b>;"
-         f"招募缺口組合若各增加 10 間房源、以該組合中位表現計,可帶來的增量收入"
-         f"應以此口徑另行試算。所有金額皆為<b>模型預估</b>,非實際金流。")
+         f"缺口市場組合若各增加 10 間房源、以該組合中位表現計,可帶來的增量收入"
+         f"應以此口徑另行試算。")
